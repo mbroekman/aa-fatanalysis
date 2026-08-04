@@ -1,0 +1,21 @@
+{% extends "allianceauth/base-bs5.html" %}
+{% load i18n %}
+
+{% block page_title %}{% trans "FAT Analysis" %}{% endblock page_title %}
+
+{% block content %}
+    <div class="row">
+        <div class="col-md-12">
+            <h1 class="page-header text-center">{% trans "FAT Analysis Dashboard" %}</h1>
+            {% block fatanalysis_content %}{% endblock %}
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_css %}
+    {% include 'bundles/datatables-css-bs5.html' %}
+{% endblock %}
+
+{% block extra_javascript %}
+    {% include 'bundles/datatables-js-bs5.html' %}
+{% endblock %}

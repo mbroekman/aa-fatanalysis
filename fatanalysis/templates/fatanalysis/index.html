@@ -1,0 +1,94 @@
+{% extends "fatanalysis/base.html" %}
+{% load i18n %}
+
+{% block fatanalysis_content %}
+    <div class="row">
+        <div class="col-md-12">
+            <a href="{% url 'fatanalysis:period_list' %}" class="btn btn-default pull-right" style="margin-left: 10px;">
+                <i class="fas fa-list"></i> {% trans "Manage Periods" %}
+            </a>
+            <a href="{% url 'fatanalysis:import_csv' %}" class="btn btn-primary pull-right">
+                <i class="fas fa-upload"></i> {% trans "Import CSV" %}
+            </a>
+        </div>
+    </div>
+    <br>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{% trans "FAT Trend Over Time (Alliance Total)" %}</h3>
+        </div>
+        <div class="panel-body">
+            <canvas id="trendChart" height="100"></canvas>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="panel panel-default text-center">
+                <div class="panel-body">
+                    <h3>{% trans "30 Days Dashboard" %}</h3>
+                    <p>{% trans "View the latest 30 days FATs per character." %}</p>
+                    <a href="{% url 'fatanalysis:overview_30' %}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-calendar-alt"></i> {% trans "30 Days Overview" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="panel panel-default text-center">
+                <div class="panel-body">
+                    <h3>{% trans "90 Days Dashboard" %}</h3>
+                    <p>{% trans "View the latest 90 days FATs per character." %}</p>
+                    <a href="{% url 'fatanalysis:overview_90' %}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-calendar-alt"></i> {% trans "90 Days Overview" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    {{ block.super }}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        $(document).ready(function() {
+
+            // Trend Chart
+            const trendCtx = document.getElementById('trendChart').getContext('2d');
+            new Chart(trendCtx, {
+                type: 'bar',
+                data: {
+                    labels: {{ trend_labels|safe }},
+                    datasets: [
+                        {
+                            label: '{% trans "30 Days FATs" %}',
+                            data: {{ trend_30|safe }},
+                            borderColor: '#36A2EB',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            tension: 0.1,
+                            fill: true
+                        },
+                        {
+                            label: '{% trans "90 Days FATs" %}',
+                            data: {{ trend_90|safe }},
+                            borderColor: '#FF6384',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            tension: 0.1,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "fatanalysis/base.html" %}
+{% load i18n %}
+
+{% block fatanalysis_content %}
+    <div class="row">
+        <div class="col-md-12">
+            <a href="{% url 'fatanalysis:index' %}" class="btn btn-default pull-right">
+                <i class="fas fa-arrow-left"></i> {% trans "Back to Overview" %}
+            </a>
+            <h2>{% trans "Period Details" %} - {{ period.get_period_type_display }} ({{ period.upload_date|date:"Y-m-d" }})</h2>
+        </div>
+    </div>
+    <br>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Top 20 Players" %}</h3>
+                </div>
+                <div class="panel-body">
+                    <canvas id="playerChart" width="400" height="100"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{% trans "All Entries" %}</h3>
+        </div>
+        <div class="panel-body">
+            <table class="table table-striped table-hover" id="entries-table">
+                <thead>
+                    <tr>
+                        <th>{% trans "Character" %}</th>
+                        <th>{% trans "Total FATs" %}</th>
+                        {% for header in dynamic_headers %}
+                            <th>{{ header }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                    <tr>
+                        <td>{{ entry.character_name }}</td>
+                        <td>{{ entry.total_fats }}</td>
+                        {% for val in entry.dynamic_values %}
+                            <td>{{ val }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    {{ block.super }}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#entries-table').DataTable({
+                "order": [[ 1, "desc" ]]
+            });
+
+            const playerCtx = document.getElementById('playerChart').getContext('2d');
+
+            new Chart(playerCtx, {
+                type: 'bar',
+                data: {
+                    labels: {{ player_labels|safe }},
+                    datasets: [{
+                        label: '{% trans "FATs" %}',
+                        data: {{ player_values|safe }},
+                        backgroundColor: '#36A2EB'
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "fatanalysis/base.html" %}
+{% load i18n %}
+
+{% block fatanalysis_content %}
+    <div class="row">
+        <div class="col-md-12">
+            <a href="{% url 'fatanalysis:index' %}" class="btn btn-default pull-right">
+                <i class="fas fa-arrow-left"></i> {% trans "Back to Dashboard" %}
+            </a>
+            <h2>{{ title }} <small>({{ period.upload_date|date:"Y-m-d"|default:"No uploads yet" }})</small></h2>
+        </div>
+    </div>
+    {% if period %}
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Historical FAT Trend" %} ({{ period_type }} {% trans "Days" %})</h3>
+                </div>
+                <div class="panel-body">
+                    <canvas id="historicalTrendChart" height="100"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Top 10 Players" %}</h3>
+                </div>
+                <div class="panel-body">
+                    <canvas id="topPlayersChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "All Players" %}</h3>
+                </div>
+                <div class="panel-body">
+                    <table class="table table-striped table-hover" id="overview-table">
+                        <thead>
+                            <tr>
+                                <th>{% trans "Character" %}</th>
+                                <th>{% trans "Total FATs" %}</th>
+                                {% for header in dynamic_headers %}
+                                <th>{{ header }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in entries %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'fatanalysis:player_detail' character_name=entry.character_name period_type=period_type %}">
+                                        {{ entry.character_name }}
+                                    </a>
+                                </td>
+                                <td><strong>{{ entry.total_fats }}</strong></td>
+                                {% for value in entry.dynamic_values %}
+                                <td>{{ value }}</td>
+                                {% endfor %}
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="{{ dynamic_headers|length|add:2 }}" class="text-center">{% trans "No FAT data available." %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        {% trans "No uploads found for this period type yet." %}
+    </div>
+    {% endif %}
+{% endblock %}
+
+{% block extra_javascript %}
+    {{ block.super }}
+    {% if period %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#overview-table').DataTable({
+                "order": [[ 1, "desc" ]]
+            });
+
+            // Pie Chart for Top Players
+            const topCtx = document.getElementById('topPlayersChart').getContext('2d');
+            new Chart(topCtx, {
+                type: 'pie',
+                data: {
+                    labels: {{ top_labels|safe }},
+                    datasets: [{
+                        data: {{ top_data|safe }},
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+                            '#FF9F40', '#E7E9ED', '#8AC926', '#1982C4', '#6A4C93'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true
+                }
+            });
+
+            // Trend Chart
+            const trendCtx = document.getElementById('historicalTrendChart').getContext('2d');
+            new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: {{ trend_labels|safe }},
+                    datasets: [{
+                        label: '{{ period_type }} {% trans "Days FATs" %}',
+                        data: {{ trend_data|safe }},
+                        borderColor: '#36A2EB',
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+    {% endif %}
+{% endblock %}

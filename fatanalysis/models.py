@@ -2,6 +2,18 @@ from django.db import models
 from allianceauth.eveonline.models import EveCharacter
 from django.utils import timezone
 
+class General(models.Model):
+    """
+    Meta model for app permissions
+    """
+
+    class Meta:
+        managed = False
+        default_permissions = ()
+        permissions = (
+            ('basic_access', 'Can access this app'),
+        )
+
 class UploadPeriod(models.Model):
     PERIOD_CHOICES = (
         (30, '30 Days'),

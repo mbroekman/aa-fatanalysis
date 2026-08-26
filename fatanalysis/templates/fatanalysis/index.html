@@ -20,15 +20,19 @@
         </div>
         <div class="panel-body">
             <ul class="nav nav-tabs" role="tablist">
-                <li role="presentation" class="active"><a href="#tab-30" aria-controls="tab-30" role="tab" data-toggle="tab">{% trans "30 Days FATs" %}</a></li>
-                <li role="presentation"><a href="#tab-90" aria-controls="tab-90" role="tab" data-toggle="tab">{% trans "90 Days FATs" %}</a></li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-30-btn" data-bs-toggle="tab" data-bs-target="#tab-30" type="button" role="tab" aria-controls="tab-30" aria-selected="true">{% trans "30 Days FATs" %}</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-90-btn" data-bs-toggle="tab" data-bs-target="#tab-90" type="button" role="tab" aria-controls="tab-90" aria-selected="false">{% trans "90 Days FATs" %}</button>
+                </li>
             </ul>
             <div class="tab-content">
-                <div role="tabpanel" class="tab-pane active" id="tab-30">
+                <div class="tab-pane fade show active" id="tab-30" role="tabpanel" aria-labelledby="tab-30-btn">
                     <br>
                     <canvas id="trendChart30" height="100"></canvas>
                 </div>
-                <div role="tabpanel" class="tab-pane" id="tab-90">
+                <div class="tab-pane fade" id="tab-90" role="tabpanel" aria-labelledby="tab-90-btn">
                     <br>
                     <canvas id="trendChart90" height="100"></canvas>
                 </div>

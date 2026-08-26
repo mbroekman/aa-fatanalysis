@@ -2,6 +2,13 @@
 
 Alliance Auth plugin for analyzing FATs (Fleet Activity Tracking). This plugin allows for the upload of 30-day and 90-day FAT CSV files, parses them dynamically, and provides overviews and interactive charts on both a per-character and per-corporation basis.
 
+## Features
+
+- **CSV Import**: Upload standard FAT CSV files for both 30-day and 90-day periods.
+- **Tabbed Dashboard**: A clean, modern Bootstrap 5 UI that separates 30-day and 90-day overview charts into easy-to-use tabs.
+- **Interactive Charts**: Powered by Chart.js for tracking FAT trends over time on both Alliance and Player levels.
+- **Permissions Management**: Easily restrict access to the dashboard using the built-in `fatanalysis.basic_access` permission.
+
 ## Installation
 
 1. **Activate your Alliance Auth virtual environment**

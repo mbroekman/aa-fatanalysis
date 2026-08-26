@@ -19,7 +19,20 @@
             <h3 class="panel-title">{% trans "FAT Trend Over Time (Alliance Total)" %}</h3>
         </div>
         <div class="panel-body">
-            <canvas id="trendChart" height="100"></canvas>
+            <ul class="nav nav-tabs" role="tablist">
+                <li role="presentation" class="active"><a href="#tab-30" aria-controls="tab-30" role="tab" data-toggle="tab">{% trans "30 Days FATs" %}</a></li>
+                <li role="presentation"><a href="#tab-90" aria-controls="tab-90" role="tab" data-toggle="tab">{% trans "90 Days FATs" %}</a></li>
+            </ul>
+            <div class="tab-content">
+                <div role="tabpanel" class="tab-pane active" id="tab-30">
+                    <br>
+                    <canvas id="trendChart30" height="100"></canvas>
+                </div>
+                <div role="tabpanel" class="tab-pane" id="tab-90">
+                    <br>
+                    <canvas id="trendChart90" height="100"></canvas>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -55,9 +68,9 @@
     <script>
         $(document).ready(function() {
 
-            // Trend Chart
-            const trendCtx = document.getElementById('trendChart').getContext('2d');
-            new Chart(trendCtx, {
+            // 30 Days Trend Chart
+            const trendCtx30 = document.getElementById('trendChart30').getContext('2d');
+            new Chart(trendCtx30, {
                 type: 'bar',
                 data: {
                     labels: {{ trend_labels|safe }},
@@ -69,7 +82,26 @@
                             backgroundColor: 'rgba(54, 162, 235, 0.2)',
                             tension: 0.1,
                             fill: true
-                        },
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // 90 Days Trend Chart
+            const trendCtx90 = document.getElementById('trendChart90').getContext('2d');
+            new Chart(trendCtx90, {
+                type: 'bar',
+                data: {
+                    labels: {{ trend_labels|safe }},
+                    datasets: [
                         {
                             label: '{% trans "90 Days FATs" %}',
                             data: {{ trend_90|safe }},

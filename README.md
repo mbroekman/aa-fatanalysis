@@ -1,5 +1,9 @@
 # FAT Analysis
 
+[![PyPI version](https://img.shields.io/pypi/v/aa-fatanalysis)](https://pypi.org/project/aa-fatanalysis/)
+[![Python versions](https://img.shields.io/pypi/pyversions/aa-fatanalysis)](https://pypi.org/project/aa-fatanalysis/)
+[![Tests](https://github.com/mbroekman/aa-fatanalysis/actions/workflows/automated-checks.yml/badge.svg)](https://github.com/mbroekman/aa-fatanalysis/actions/workflows/automated-checks.yml)
+
 Alliance Auth plugin for analyzing FATs (Fleet Activity Tracking). This plugin allows for the upload of 30-day and 90-day FAT CSV files, parses them dynamically, and provides overviews and interactive charts on both a per-character and per-corporation basis.
 
 ## Features

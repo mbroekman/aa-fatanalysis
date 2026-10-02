@@ -1,8 +1,58 @@
-*.pyc
+# Python
 __pycache__/
-db.sqlite3
-dist/
-build/
+*.py[cod]
+*$py.class
+*.so
+
+# Build & Distribution
+/build/
+/dist/
 *.egg-info/
+*.egg
+
+# Virtual environments
 .venv/
 venv/
+tmp_env/
+build_venv/
+/build_venv
+.venv-precommit/
+.temp_venv/
+precommit-env/
+.tmp-env/
+env/
+
+# IDEs and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Tests, Tox & Coverage
+.tox/
+htmlcov/
+.coverage
+/coverage.xml
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Databases
+*.sqlite3
+db.sqlite3
+alliance_auth.sqlite3
+
+# Node / JS
+node_modules/
+
+# Logs and temps
+*.log
+*.tmp
+*.bak
+*.old
+.env
+
+# Tijdelijke (scratch) scripts in de root
+/*test*.py
+/append_task.py
+/make_migrations.py

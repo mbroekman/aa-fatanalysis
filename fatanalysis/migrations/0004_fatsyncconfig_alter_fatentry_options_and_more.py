@@ -5,6 +5,11 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def clear_legacy_entries(apps, schema_editor):
+    FatEntry = apps.get_model("fatanalysis", "FatEntry")
+    FatEntry.objects.all().delete()
+
+
 class Migration(migrations.Migration):
     dependencies = [
         ("eveonline", "0025_remove_evecharacter_last_updated_and_more"),
@@ -150,6 +155,7 @@ class Migration(migrations.Migration):
                 "ordering": ["-year", "-month"],
             },
         ),
+        migrations.RunPython(clear_legacy_entries, migrations.RunPython.noop),
         migrations.AlterField(
             model_name="fatentry",
             name="period",

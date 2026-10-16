@@ -10,6 +10,7 @@
 - Add longitudinal player FAT detail page with trend charts and participation breakdown
 - Upgrade templates to strict Bootstrap 5 with AA top header version branding
 - Implement automated one-click initial bulk sync and single-month fetch directly from INIT Auth AFAT (FATANALYSIS-18)
+- Replace native browser confirm() popup with custom Bootstrap 5 confirmation modal for bulk sync (FATANALYSIS-19)
 - Add `fatanalysis_sync_all` Django management command for automated CLI/cron crawler synchronization
 - Enhance HTML scraper to automatically parse `corp-main-characters` tables and resolve character IDs
 - Remove obsolete CSV upload and paste functionality in favor of direct INIT Auth scraping

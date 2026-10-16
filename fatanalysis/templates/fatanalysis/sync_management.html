@@ -30,8 +30,9 @@
                 <p class="text-muted small mb-3">
                     {% trans "Crawl and ingest all historical corporation FAT reports from INIT Auth in a single pass. The scraper will query each month sequentially and atomically update the database." %}
                 </p>
-                <form method="post" action="{% url 'fatanalysis:sync_management' %}" onsubmit="return confirm('{% trans "Start bulk synchronization from INIT Auth? This will crawl all monthly periods in the selected range." %}');">
+                <form id="bulk-sync-form" method="post" action="{% url 'fatanalysis:sync_management' %}">
                     {% csrf_token %}
+                    <input type="hidden" name="action" value="sync_bulk_history">
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">{% trans "Start Year" %}</label>
@@ -47,7 +48,7 @@
                             {{ bulk_form.end_month }}
                         </div>
                     </div>
-                    <button type="submit" name="action" value="sync_bulk_history" class="btn btn-success">
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#bulkSyncConfirmModal">
                         <i class="fas fa-play me-1"></i> {% trans "Start Initial Bulk Sync" %}
                     </button>
                 </form>
@@ -193,4 +194,60 @@
         </div>
     </div>
 </div>
+
+<!-- Bulk Sync Confirmation Modal -->
+<div class="modal fade" id="bulkSyncConfirmModal" tabindex="-1" aria-labelledby="bulkSyncConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-bottom border-secondary">
+                <h5 class="modal-title fw-bold" id="bulkSyncConfirmModalLabel">
+                    <i class="fas fa-cloud-download-alt text-success me-2"></i>{% trans "Confirm Bulk Synchronization" %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="{% trans 'Close' %}"></button>
+            </div>
+            <div class="modal-body py-4">
+                <div class="d-flex align-items-start mb-3">
+                    <div class="me-3 fs-2 text-success opacity-75">
+                        <i class="fas fa-info-circle"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-1">{% trans "Start automated crawl from INIT Auth?" %}</h6>
+                        <p class="text-muted small mb-0">
+                            {% trans "This will crawl all monthly AFAT reports in the selected year and month range directly from INIT Auth. Existing data for the matched months will be atomically updated." %}
+                        </p>
+                    </div>
+                </div>
+                <div class="alert alert-info py-2 px-3 small mb-0">
+                    <i class="fas fa-clock me-1"></i>
+                    {% trans "Depending on the range of years selected, this process may take 15 to 30 seconds to complete." %}
+                </div>
+            </div>
+            <div class="modal-footer border-top border-secondary">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <button type="button" class="btn btn-success" id="btn-confirm-bulk-sync">
+                    <i class="fas fa-play me-1"></i> {% trans "Yes, Start Bulk Sync" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
+
+{% block extra_javascript %}
+    {{ block.super }}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var confirmBtn = document.getElementById('btn-confirm-bulk-sync');
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', function () {
+                    this.disabled = true;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> ' + '{% trans "Synchronizing..." %}';
+                    document.getElementById('bulk-sync-form').submit();
+                });
+            }
+        });
+    </script>
+{% endblock %}
+

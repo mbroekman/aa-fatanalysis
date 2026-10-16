@@ -1,3 +1,15 @@
+## [Unreleased]
+
+### Feat
+
+- Redesign aa-fatanalysis for multi-year AFAT ingestion and dynamic time windows (FATANALYSIS-16)
+- Introduce `FatMonthPeriod` and dynamic JSON `FatEntry` models replacing legacy fixed 30/90-day tables
+- Implement `AfatScraperService` for remote AFAT ingestion via session cookie authentication
+- Add director frontend management UI (`/fatanalysis/sync/`) with live credential testing, report URL ingestion, and direct CSV import
+- Support dynamic dashboard aggregation across 30d, 90d, 120d, YTD, multi-year, and all-time windows
+- Add longitudinal player FAT detail page with trend charts and participation breakdown
+- Upgrade templates to strict Bootstrap 5 with AA top header version branding
+
 ## v0.2.0 (2026-08-26)
 
 ### Feat

@@ -2,56 +2,86 @@
 {% load i18n %}
 
 {% block fatanalysis_content %}
-    <div class="row">
-        <div class="col-md-12">
-            <a href="{% url 'fatanalysis:index' %}" class="btn btn-default pull-right">
-                <i class="fas fa-arrow-left"></i> {% trans "Back to Overview" %}
-            </a>
-            <h2>{% trans "Manage Uploaded Periods" %}</h2>
-        </div>
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 pb-2 border-bottom">
+    <div>
+        <h2 class="h4 mb-0 fw-bold">{{ title }}</h2>
+        <small class="text-muted">{% trans "Overview of all synchronized and recorded monthly FAT periods" %}</small>
     </div>
-    <br>
+    <div class="d-flex gap-2">
+        <a href="{% url 'fatanalysis:index' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> {% trans "Back to Dashboard" %}
+        </a>
+        {% if perms.fatanalysis.manage_fatanalysis %}
+            <a href="{% url 'fatanalysis:sync_management' %}" class="btn btn-primary btn-sm">
+                <i class="fas fa-sync-alt me-1"></i> {% trans "Sync & Ingest" %}
+            </a>
+        {% endif %}
+    </div>
+</div>
 
-    <div class="panel panel-default">
-        <div class="panel-heading">
-            <h3 class="panel-title">{% trans "Uploaded Periods" %}</h3>
-        </div>
-        <div class="panel-body">
-            <table class="table table-striped table-hover" id="periods-table">
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="fas fa-calendar-alt me-1 text-primary"></i> {% trans "Monthly Recording Periods" %}</span>
+        <span class="badge bg-secondary">{{ periods|length }} {% trans "Periods" %}</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle w-100" id="periods-table">
                 <thead>
                     <tr>
-                        <th>{% trans "Date" %}</th>
-                        <th>{% trans "Type" %}</th>
-                        <th>{% trans "Uploaded By" %}</th>
-                        <th>{% trans "FAT Entries" %}</th>
-                        <th>{% trans "Actions" %}</th>
+                        <th>{% trans "Period" %}</th>
+                        <th>{% trans "Corporation" %}</th>
+                        <th class="text-center">{% trans "Total FATs" %}</th>
+                        <th class="text-center">{% trans "Active Pilots" %}</th>
+                        <th class="text-center">{% trans "Total Pilots" %}</th>
+                        <th>{% trans "Last Updated" %}</th>
+                        <th>{% trans "Synced By" %}</th>
+                        <th class="text-end">{% trans "Actions" %}</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for period in periods %}
-                    <tr>
-                        <td>{{ period.upload_date|date:"Y-m-d H:i" }}</td>
-                        <td>{{ period.get_period_type_display }}</td>
-                        <td>{{ period.uploader }}</td>
-                        <td>{{ period.fat_entries.count }}</td>
-                        <td>
-                            <a href="{% url 'fatanalysis:period_detail' period.id %}" class="btn btn-info btn-xs">
-                                <i class="fas fa-eye"></i> {% trans "View" %}
-                            </a>
-                            <a href="{% url 'fatanalysis:period_delete' period.id %}" class="btn btn-danger btn-xs">
-                                <i class="fas fa-trash"></i> {% trans "Delete" %}
-                            </a>
-                        </td>
-                    </tr>
+                        <tr>
+                            <td>
+                                <a href="{% url 'fatanalysis:period_detail' period_id=period.id %}" class="fw-bold text-decoration-none">
+                                    {{ period.label }}
+                                </a>
+                            </td>
+                            <td>{{ period.corporation_name }}</td>
+                            <td class="text-center">
+                                <span class="badge bg-primary fs-6">{{ period.total_fats }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-success">{{ period.active_pilots_count }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">{{ period.total_pilots_count }}</span>
+                            </td>
+                            <td class="text-muted small">{{ period.updated_at|date:"Y-m-d H:i" }}</td>
+                            <td>{{ period.synced_by.username|default:"System" }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'fatanalysis:period_detail' period_id=period.id %}" class="btn btn-outline-primary btn-sm me-1" title="{% trans 'View details' %}">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                {% if perms.fatanalysis.manage_fatanalysis %}
+                                    <a href="{% url 'fatanalysis:period_delete' period_id=period.id %}" class="btn btn-outline-danger btn-sm" title="{% trans 'Delete period' %}">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                {% endif %}
+                            </td>
+                        </tr>
                     {% empty %}
-                    <tr>
-                        <td colspan="5" class="text-center">{% trans "No periods uploaded yet." %}</td>
-                    </tr>
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                {% trans "No monthly FAT periods recorded yet." %}
+                            </td>
+                        </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
+</div>
 {% endblock %}
 
 {% block extra_javascript %}
@@ -59,7 +89,9 @@
     <script>
         $(document).ready(function() {
             $('#periods-table').DataTable({
-                "order": [[ 0, "desc" ]]
+                order: [[ 0, "desc" ]],
+                pageLength: 25,
+                responsive: false
             });
         });
     </script>

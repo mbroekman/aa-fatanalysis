@@ -4,21 +4,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('fatanalysis', '0002_alter_uploadperiod_upload_date'),
+        ("fatanalysis", "0002_alter_uploadperiod_upload_date"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='General',
+            name="General",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
             ],
             options={
-                'permissions': (('basic_access', 'Can access this app'),),
-                'managed': False,
-                'default_permissions': (),
+                "permissions": (("basic_access", "Can access this app"),),
+                "managed": False,
+                "default_permissions": (),
             },
         ),
     ]

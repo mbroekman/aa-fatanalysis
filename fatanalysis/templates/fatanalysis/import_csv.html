@@ -1,20 +1,22 @@
 {% extends "fatanalysis/base.html" %}
 {% load i18n %}
-{% load django_bootstrap5 %}
 
 {% block fatanalysis_content %}
-    <div class="panel panel-default">
-        <div class="panel-heading">
-            <h3 class="panel-title">{% trans "Import FAT CSV" %}</h3>
-        </div>
-        <div class="panel-body">
-            <p>{% trans "Upload your 30 or 90 days FAT CSV file here. The system will automatically parse all columns, including any dynamic fleet types." %}</p>
-            <form method="POST" enctype="multipart/form-data">
-                {% csrf_token %}
-                {% bootstrap_form form %}
-                <button type="submit" class="btn btn-primary">{% trans "Upload" %}</button>
-                <a href="{% url 'fatanalysis:index' %}" class="btn btn-default">{% trans "Cancel" %}</a>
-            </form>
+<div class="row justify-content-center py-4">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-header fw-bold">
+                <i class="fas fa-file-import me-1 text-primary"></i> {% trans "FAT Ingestion & Management" %}
+            </div>
+            <div class="card-body p-4 text-center">
+                <p class="text-muted">
+                    {% trans "CSV imports and INIT Auth scraper synchronizations are now centrally managed in the AFAT Sync & Ingestion dashboard." %}
+                </p>
+                <a href="{% url 'fatanalysis:sync_management' %}" class="btn btn-primary">
+                    <i class="fas fa-arrow-right me-1"></i> {% trans "Go to Sync & Ingestion Management" %}
+                </a>
+            </div>
         </div>
     </div>
+</div>
 {% endblock %}

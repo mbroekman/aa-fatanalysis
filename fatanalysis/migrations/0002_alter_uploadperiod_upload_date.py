@@ -5,15 +5,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('fatanalysis', '0001_initial'),
+        ("fatanalysis", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='uploadperiod',
-            name='upload_date',
+            model_name="uploadperiod",
+            name="upload_date",
             field=models.DateTimeField(default=django.utils.timezone.now),
         ),
     ]

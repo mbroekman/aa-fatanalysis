@@ -1,19 +1,37 @@
 {% extends "allianceauth/base-bs5.html" %}
-{% load i18n %}
+{% load i18n static fatanalysis_tags %}
 
-{% block page_title %}{% trans "FAT Analysis" %}{% endblock page_title %}
+{% block page_title %}{% fatanalysis_app_name %}{% endblock page_title %}
+
+{% block header_nav_brand %}
+    {% fatanalysis_app_name %} <span class="badge bg-secondary ms-2 text-white" style="font-size: 0.5em; vertical-align: middle;">v{% fatanalysis_version %}</span>
+{% endblock header_nav_brand %}
 
 {% block content %}
-    <div class="row">
-        <div class="col-md-12">
-            <h1 class="page-header text-center">{% trans "FAT Analysis Dashboard" %}</h1>
-            {% block fatanalysis_content %}{% endblock %}
-        </div>
+    <div class="container-fluid py-3">
+        {% block fatanalysis_content %}{% endblock %}
     </div>
 {% endblock %}
 
 {% block extra_css %}
     {% include 'bundles/datatables-css-bs5.html' %}
+    <style>
+        .fat-stat-card {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 0.5rem;
+            transition: transform 0.15s ease-in-out, border-color 0.15s ease-in-out;
+        }
+        .fat-stat-card:hover {
+            border-color: rgba(54, 162, 235, 0.5);
+            transform: translateY(-2px);
+        }
+        .fat-stat-number {
+            font-size: 1.85rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+    </style>
 {% endblock %}
 
 {% block extra_javascript %}

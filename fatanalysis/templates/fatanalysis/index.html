@@ -2,59 +2,237 @@
 {% load i18n %}
 
 {% block fatanalysis_content %}
-    <div class="row">
-        <div class="col-md-12">
-            <a href="{% url 'fatanalysis:period_list' %}" class="btn btn-default pull-right" style="margin-left: 10px;">
-                <i class="fas fa-list"></i> {% trans "Manage Periods" %}
-            </a>
-            <a href="{% url 'fatanalysis:import_csv' %}" class="btn btn-primary pull-right">
-                <i class="fas fa-upload"></i> {% trans "Import CSV" %}
-            </a>
-        </div>
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 pb-2 border-bottom">
+    <div>
+        <h2 class="h4 mb-0 fw-bold">{% trans "Fleet Activity Tracking" %}</h2>
+        <small class="text-muted">{% trans "Corporation fleet participation analysis and longitudinal metrics" %}</small>
     </div>
-    <br>
+    <div class="d-flex gap-2 mt-2 mt-md-0">
+        <a href="{% url 'fatanalysis:period_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-calendar-alt me-1"></i> {% trans "Recorded Periods" %}
+        </a>
+        {% if perms.fatanalysis.manage_fatanalysis %}
+            <a href="{% url 'fatanalysis:sync_management' %}" class="btn btn-primary btn-sm">
+                <i class="fas fa-sync-alt me-1"></i> {% trans "Sync & Ingestion" %}
+            </a>
+        {% endif %}
+    </div>
+</div>
 
-    <div class="panel panel-default">
-        <div class="panel-heading">
-            <h3 class="panel-title">{% trans "FAT Trend Over Time (Alliance Total)" %}</h3>
-        </div>
-        <div class="panel-body">
-            <ul class="nav nav-tabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="tab-30-btn" data-bs-toggle="tab" data-bs-target="#tab-30" type="button" role="tab" aria-controls="tab-30" aria-selected="true">{% trans "30 Days FATs" %}</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="tab-90-btn" data-bs-toggle="tab" data-bs-target="#tab-90" type="button" role="tab" aria-controls="tab-90" aria-selected="false">{% trans "90 Days FATs" %}</button>
-                </li>
-            </ul>
-            <div class="tab-content">
-                <div class="tab-pane fade show active" id="tab-30" role="tabpanel" aria-labelledby="tab-30-btn">
-                    <br>
-                    <canvas id="trendChart30" height="100"></canvas>
-                    <br>
-                    <div class="text-center">
-                        <a href="{% url 'fatanalysis:overview_30' %}" class="btn btn-primary btn-lg">
-                            <i class="fas fa-calendar-alt"></i> {% trans "30 Days Overview" %}
-                        </a>
-                    </div>
-                    <br>
-                </div>
-                <div class="tab-pane fade" id="tab-90" role="tabpanel" aria-labelledby="tab-90-btn">
-                    <br>
-                    <canvas id="trendChart90" height="100"></canvas>
-                    <br>
-                    <div class="text-center">
-                        <a href="{% url 'fatanalysis:overview_90' %}" class="btn btn-primary btn-lg">
-                            <i class="fas fa-calendar-alt"></i> {% trans "90 Days Overview" %}
-                        </a>
-                    </div>
-                    <br>
-                </div>
+<!-- Time Window Filter Navigation -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <span class="text-muted small fw-bold text-uppercase"><i class="fas fa-filter me-1"></i> {% trans "Time Window:" %}</span>
+            <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Time Window Selector">
+                <a href="?window=30d" class="btn {% if window == '30d' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    {% trans "30 Days (Latest)" %}
+                </a>
+                <a href="?window=90d" class="btn {% if window == '90d' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    {% trans "90 Days" %}
+                </a>
+                <a href="?window=120d" class="btn {% if window == '120d' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    {% trans "120 Days" %}
+                </a>
+                <a href="?window=ytd" class="btn {% if window == 'ytd' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    {% trans "YTD" %}
+                </a>
+                {% for y in available_years %}
+                    <a href="?window=year_{{ y }}" class="btn {% if window == 'year_'|add:y|stringformat:'s' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        {{ y }}
+                    </a>
+                {% endfor %}
+                <a href="?window=all" class="btn {% if window == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    {% trans "All Time" %}
+                </a>
+            </div>
+            <div class="text-muted small">
+                {% if periods %}
+                    <span class="badge bg-secondary">{{ periods|length }} {% trans "monthly periods selected" %}</span>
+                {% else %}
+                    <span class="badge bg-warning text-dark">{% trans "No periods recorded" %}</span>
+                {% endif %}
             </div>
         </div>
     </div>
+</div>
 
+<!-- KPI Stat Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card fat-stat-card h-100 p-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small text-uppercase fw-semibold">{% trans "Total FATs" %}</div>
+                    <div class="fat-stat-number text-primary mt-1">{{ total_fats|default:0 }}</div>
+                </div>
+                <div class="text-primary opacity-50"><i class="fas fa-rocket fa-2x"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card fat-stat-card h-100 p-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small text-uppercase fw-semibold">{% trans "Active Pilots" %}</div>
+                    <div class="fat-stat-number text-success mt-1">{{ active_pilots_count|default:0 }}</div>
+                </div>
+                <div class="text-success opacity-50"><i class="fas fa-user-check fa-2x"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card fat-stat-card h-100 p-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small text-uppercase fw-semibold">{% trans "Total Tracked" %}</div>
+                    <div class="fat-stat-number text-info mt-1">{{ total_pilots_count|default:0 }}</div>
+                </div>
+                <div class="text-info opacity-50"><i class="fas fa-users fa-2x"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card fat-stat-card h-100 p-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small text-uppercase fw-semibold">{% trans "Active Participation" %}</div>
+                    <div class="fat-stat-number text-warning mt-1">
+                        {% if total_pilots_count > 0 %}
+                            {% widthratio active_pilots_count total_pilots_count 100 %}%
+                        {% else %}
+                            0%
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="text-warning opacity-50"><i class="fas fa-percentage fa-2x"></i></div>
+            </div>
+        </div>
+    </div>
+</div>
 
+<!-- Visualizations Row -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="fas fa-chart-bar me-1 text-primary"></i> {% trans "Fleet Activity Progression Over Time" %}</span>
+                <span class="badge bg-secondary">{{ periods|length }} {% trans "Periods" %}</span>
+            </div>
+            <div class="card-body">
+                {% if periods %}
+                    <div style="position: relative; height: 260px;">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-info-circle fa-2x mb-2"></i>
+                        <p>{% trans "No period data available for this time window." %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <span class="fw-bold"><i class="fas fa-chart-pie me-1 text-info"></i> {% trans "Fleet Types Breakdown" %}</span>
+            </div>
+            <div class="card-body">
+                {% if fat_type_distribution %}
+                    <div style="position: relative; height: 260px;">
+                        <canvas id="typeChart"></canvas>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-info-circle fa-2x mb-2"></i>
+                        <p>{% trans "No type breakdown available." %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pilots Breakdown Table -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="fas fa-table me-1 text-primary"></i> {% trans "Pilot Participation Matrix" %}</span>
+        <span class="badge bg-primary">{{ pilots|length }} {% trans "Pilots" %}</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table id="table-pilots" class="table table-striped table-hover align-middle w-100">
+                <thead>
+                    <tr>
+                        <th>{% trans "Pilot Name" %}</th>
+                        <th>{% trans "Main Character" %}</th>
+                        <th class="text-center">{% trans "Type" %}</th>
+                        <th class="text-center">{% trans "Total FATs" %}</th>
+                        <th class="text-center">{% trans "Avg / Month" %}</th>
+                        {% for period in periods %}
+                            <th class="text-center" title="{{ period.label }}">{{ period.year }}-{{ period.month|stringformat:"02d" }}</th>
+                        {% endfor %}
+                        {% for header in dynamic_headers %}
+                            <th class="text-center">{{ header }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pilot in pilots %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'fatanalysis:player_detail' character_name=pilot.character_name %}" class="fw-bold text-decoration-none">
+                                    {{ pilot.character_name }}
+                                </a>
+                            </td>
+                            <td>{{ pilot.main_character_name|default:"-" }}</td>
+                            <td class="text-center">
+                                {% if pilot.is_main %}
+                                    <span class="badge bg-success">{% trans "Main" %}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{% trans "Alt" %}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if pilot.total_fats > 0 %}
+                                    <span class="badge bg-primary fs-6">{{ pilot.total_fats }}</span>
+                                {% else %}
+                                    <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center text-muted small">{{ pilot.avg_fats_per_month }}</td>
+                            {% for val in pilot.period_values %}
+                                <td class="text-center">
+                                    {% if val > 0 %}
+                                        <span class="badge bg-light text-dark border">{{ val }}</span>
+                                    {% else %}
+                                        <span class="text-muted opacity-50">-</span>
+                                    {% endif %}
+                                </td>
+                            {% endfor %}
+                            {% for val in pilot.dynamic_values %}
+                                <td class="text-center">
+                                    {% if val > 0 %}
+                                        {{ val }}
+                                    {% else %}
+                                        <span class="text-muted opacity-50">-</span>
+                                    {% endif %}
+                                </td>
+                            {% endfor %}
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="{{ table_columns_count }}" class="text-center py-4 text-muted">
+                                {% trans "No pilot FAT entries recorded for this time window." %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_javascript %}
@@ -62,60 +240,89 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         $(document).ready(function() {
+            // Initialize DataTables
+            $('#table-pilots').DataTable({
+                order: [[3, 'desc']],
+                pageLength: 25,
+                responsive: false,
+                language: {
+                    search: "_INPUT_",
+                    searchPlaceholder: "{% trans 'Search pilots...' %}"
+                }
+            });
 
-            // 30 Days Trend Chart
-            const trendCtx30 = document.getElementById('trendChart30').getContext('2d');
-            new Chart(trendCtx30, {
-                type: 'bar',
-                data: {
-                    labels: {{ trend_labels|safe }},
-                    datasets: [
-                        {
-                            label: '{% trans "30 Days FATs" %}',
-                            data: {{ trend_30|safe }},
+            // Trend Chart
+            {% if periods %}
+            const trendCtx = document.getElementById('trendChart');
+            if (trendCtx) {
+                new Chart(trendCtx.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: {{ trend_labels|safe }},
+                        datasets: [{
+                            label: '{% trans "Total Fleet FATs" %}',
+                            data: {{ trend_values|safe }},
+                            backgroundColor: 'rgba(54, 162, 235, 0.45)',
                             borderColor: '#36A2EB',
-                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                            tension: 0.1,
-                            fill: true
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {
-                            beginAtZero: true
+                            borderWidth: 1.5,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(255, 255, 255, 0.08)' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
                         }
                     }
-                }
-            });
+                });
+            }
+            {% endif %}
 
-            // 90 Days Trend Chart
-            const trendCtx90 = document.getElementById('trendChart90').getContext('2d');
-            new Chart(trendCtx90, {
-                type: 'bar',
-                data: {
-                    labels: {{ trend_labels|safe }},
-                    datasets: [
-                        {
-                            label: '{% trans "90 Days FATs" %}',
-                            data: {{ trend_90|safe }},
-                            borderColor: '#FF6384',
-                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                            tension: 0.1,
-                            fill: true
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {
-                            beginAtZero: true
+            // Doughnut Distribution Chart
+            {% if fat_type_distribution %}
+            const typeCtx = document.getElementById('typeChart');
+            if (typeCtx) {
+                const typeData = {{ fat_type_distribution|safe }};
+                const labels = Object.keys(typeData);
+                const values = Object.values(typeData);
+                const colors = [
+                    '#36A2EB', '#4BC0C0', '#FF6384', '#FF9F40', '#9966FF',
+                    '#FFCE56', '#4D5360', '#8AC926', '#1982C4', '#6A4C93'
+                ];
+
+                new Chart(typeCtx.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: values,
+                            backgroundColor: colors.slice(0, labels.length),
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: { boxWidth: 12, font: { size: 10 } }
+                            }
                         }
                     }
-                }
-            });
+                });
+            }
+            {% endif %}
         });
     </script>
 {% endblock %}

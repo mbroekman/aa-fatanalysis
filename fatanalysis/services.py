@@ -1,0 +1,488 @@
+"""
+Service layer for aa-fatanalysis:
+- Scraper & HTTP client for INIT Auth AFAT data
+- CSV & HTML parsing and atomic database ingestion
+- Dynamic time-window aggregation (30d, 90d, 120d, YTD, multi-year)
+"""
+
+import csv
+import io
+import logging
+from collections import defaultdict
+from typing import Any
+
+import requests
+from allianceauth.eveonline.models import EveCharacter
+from bs4 import BeautifulSoup
+from django.contrib.auth.models import User
+from django.db import transaction
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+
+from .models import FatEntry, FatMonthPeriod, FatSyncConfig
+
+logger = logging.getLogger(__name__)
+
+
+class AfatScraperService:
+    """
+    HTTP client for querying and scraping AFAT reports from INIT Auth using a session cookie.
+    """
+
+    def __init__(self, config: FatSyncConfig | None = None) -> None:
+        self.config = config or FatSyncConfig.get_solo()
+
+    def get_session(self) -> requests.Session:
+        session = requests.Session()
+        session.headers.update(
+            {
+                "User-Agent": self.config.user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/csv,*/*;q=0.8",
+            }
+        )
+        if self.config.session_cookie:
+            session.cookies.set("sessionid", self.config.session_cookie.strip())
+        return session
+
+    def test_connection(self) -> tuple[bool, str]:
+        """
+        Tests whether the configured source_url is reachable and the session cookie is valid.
+        """
+        if not self.config.session_cookie:
+            return False, str(_("No session cookie configured."))
+
+        session = self.get_session()
+        try:
+            resp = session.get(self.config.source_url, timeout=15, allow_redirects=True)
+            if resp.status_code != 200:
+                return False, str(
+                    _("HTTP error %(code)s when accessing %(url)s")
+                    % {
+                        "code": resp.status_code,
+                        "url": self.config.source_url,
+                    }
+                )
+
+            # Check if redirected to login page
+            if "/account/login" in resp.url or 'name="login"' in resp.text:
+                return False, str(_("Session cookie expired or invalid (redirected to login)."))
+
+            return True, str(_("Successfully connected to source AFAT."))
+        except requests.RequestException as e:
+            logger.exception("Failed to connect to AFAT: %s", e)
+            return False, str(_("Connection failed: %(error)s") % {"error": str(e)})
+
+    def fetch_report(self, target_url: str) -> str:
+        """
+        Fetches report content (CSV or HTML) from a specific AFAT report URL.
+        """
+        session = self.get_session()
+        resp = session.get(target_url, timeout=30, allow_redirects=True)
+        resp.raise_for_status()
+
+        if "/account/login" in resp.url:
+            raise PermissionError("Session cookie is invalid or expired (redirected to login).")
+
+        return resp.text
+
+
+class FatIngestionService:
+    """
+    Handles parsing and atomic ingestion of FAT reports into FatMonthPeriod and FatEntry models.
+    """
+
+    @staticmethod
+    def parse_csv(csv_content: str) -> list[dict[str, Any]]:
+        """
+        Parses an AFAT export CSV string into a standardized list of record dictionaries.
+        """
+        if not csv_content or not csv_content.strip():
+            return []
+
+        # Strip UTF-8 BOM if present
+        cleaned_content = csv_content.lstrip("\ufeff")
+        reader = csv.DictReader(io.StringIO(cleaned_content))
+
+        records: list[dict[str, Any]] = []
+        standard_keys = {
+            "main character",
+            "character",
+            "pilot",
+            "character name",
+            "active for corporation tracking",
+            "total fats",
+            "total",
+            "fats",
+        }
+
+        for row in reader:
+            if not row:
+                continue
+
+            # Identify character name
+            char_name = (
+                row.get("Main Character") or row.get("Character") or row.get("Pilot") or row.get("character_name")
+            )
+            if not char_name:
+                # Try finding first non-empty value
+                for k, v in row.items():
+                    if k and k.lower() in {"main character", "character", "pilot"} and v:
+                        char_name = v.strip()
+                        break
+
+            if not char_name or not char_name.strip():
+                continue
+
+            char_name = char_name.strip()
+
+            # Active/Main flag
+            active_val = row.get("Active for Corporation Tracking", "0")
+            is_main = str(active_val).strip() in {"1", "true", "True", "yes", "Yes"}
+
+            # Total FATs
+            total_raw = row.get("Total FATs") or row.get("Total") or row.get("total_fats") or 0
+            try:
+                total_fats = int(total_raw)
+            except (ValueError, TypeError):
+                total_fats = 0
+
+            # Dynamic FAT details
+            fat_details: dict[str, int] = {}
+            for col_name, val in row.items():
+                if not col_name:
+                    continue
+                col_clean = col_name.strip()
+                if col_clean.lower() not in standard_keys:
+                    try:
+                        fat_details[col_clean] = int(val) if val else 0
+                    except (ValueError, TypeError):
+                        pass
+
+            records.append(
+                {
+                    "character_name": char_name,
+                    "is_main": is_main,
+                    "total_fats": total_fats,
+                    "fat_details": fat_details,
+                    "ship_details": {},
+                }
+            )
+
+        return records
+
+    @staticmethod
+    def parse_html_table(html_content: str) -> list[dict[str, Any]]:
+        """
+        Parses an HTML table (e.g. from an AFAT report webpage) into a standardized list of records.
+        """
+        soup = BeautifulSoup(html_content, "html.parser")
+        table = soup.find("table")
+        if not table:
+            return []
+
+        headers: list[str] = []
+        thead = table.find("thead")  # type: ignore[union-attr]
+        if thead:
+            headers = [th.get_text(strip=True) for th in thead.find_all("th")]  # type: ignore[union-attr]
+        elif table.find("tr"):  # type: ignore[union-attr]
+            headers = [td.get_text(strip=True) for td in table.find("tr").find_all(["th", "td"])]  # type: ignore[union-attr]
+
+        if not headers:
+            return []
+
+        records: list[dict[str, Any]] = []
+        tbody = table.find("tbody") or table  # type: ignore[union-attr]
+        rows = tbody.find_all("tr")  # type: ignore[union-attr]
+
+        for tr in rows:
+            cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+            if not cells or len(cells) < len(headers):
+                continue
+
+            row_dict = dict(zip(headers, cells))
+            char_name = row_dict.get("Main Character") or row_dict.get("Character") or cells[0]
+            if not char_name:
+                continue
+
+            active_val = row_dict.get("Active for Corporation Tracking", "0")
+            is_main = str(active_val) in {"1", "true", "True"}
+
+            try:
+                total_fats = int(row_dict.get("Total FATs") or row_dict.get("Total", "0") or "0")
+            except (ValueError, TypeError):
+                total_fats = 0
+
+            standard_cols = {"main character", "character", "active for corporation tracking", "total fats", "total"}
+            fat_details: dict[str, int] = {}
+            for col, val in row_dict.items():
+                if col.lower() not in standard_cols:
+                    try:
+                        fat_details[col] = int(val) if val else 0
+                    except (ValueError, TypeError):
+                        pass
+
+            records.append(
+                {
+                    "character_name": char_name,
+                    "is_main": is_main,
+                    "total_fats": total_fats,
+                    "fat_details": fat_details,
+                    "ship_details": {},
+                }
+            )
+
+        return records
+
+    @classmethod
+    @transaction.atomic
+    def ingest_records(
+        cls,
+        corporation_id: int,
+        corporation_name: str,
+        year: int,
+        month: int,
+        records: list[dict[str, Any]],
+        synced_by: User | None = None,
+    ) -> FatMonthPeriod:
+        """
+        Atomically ingests a batch of records into a specific FatMonthPeriod.
+        Matches characters against local EveCharacter records when available.
+        """
+        period, _ = FatMonthPeriod.objects.get_or_create(
+            corporation_id=corporation_id,
+            year=year,
+            month=month,
+            defaults={
+                "corporation_name": corporation_name,
+                "synced_by": synced_by,
+            },
+        )
+        period.corporation_name = corporation_name
+        if synced_by:
+            period.synced_by = synced_by
+
+        # Bulk resolve EveCharacters from local Auth database
+        char_names = [r["character_name"] for r in records]
+        eve_chars = EveCharacter.objects.filter(character_name__in=char_names).select_related(
+            "character_ownership__user__profile__main_character"
+        )
+        char_map = {c.character_name: c for c in eve_chars}
+
+        # Clear existing entries for this period to guarantee clean idempotency
+        period.entries.all().delete()
+
+        entries_to_create: list[FatEntry] = []
+        for rec in records:
+            char_name = rec["character_name"]
+            eve_char = char_map.get(char_name)
+
+            main_char_id = None
+            main_char_name = ""
+            is_main = rec.get("is_main", False)
+
+            if eve_char:
+                try:
+                    ownership = getattr(eve_char, "character_ownership", None)
+                    if ownership and ownership.user and hasattr(ownership.user, "profile"):
+                        main_char = ownership.user.profile.main_character
+                        if main_char:
+                            main_char_id = main_char.character_id
+                            main_char_name = main_char.character_name
+                            is_main = main_char.character_id == eve_char.character_id
+                except Exception:
+                    pass
+
+            entries_to_create.append(
+                FatEntry(
+                    period=period,
+                    character=eve_char,
+                    character_name=char_name,
+                    main_character_id=main_char_id,
+                    main_character_name=main_char_name,
+                    is_main=is_main,
+                    total_fats=rec["total_fats"],
+                    ship_details=rec.get("ship_details", {}),
+                    fat_details=rec.get("fat_details", {}),
+                )
+            )
+
+        FatEntry.objects.bulk_create(entries_to_create)
+
+        period.total_fats = sum(e.total_fats for e in entries_to_create)
+        period.save()
+
+        # Update sync config logs if available
+        try:
+            config = FatSyncConfig.objects.filter(corporation_id=corporation_id).first()
+            if config:
+                config.last_sync_at = timezone.now()
+                config.last_sync_status = "success"
+                log_entry = (
+                    f"[{timezone.now().strftime('%Y-%m-%d %H:%M:%S')}] Ingested {len(entries_to_create)} "
+                    f"entries for {period.label} ({period.total_fats} total FATs).\n"
+                )
+                config.last_sync_log = (log_entry + config.last_sync_log)[:4000]
+                config.save(update_fields=["last_sync_at", "last_sync_status", "last_sync_log"])
+        except Exception:
+            pass
+
+        return period
+
+
+class FatAggregationService:
+    """
+    Dynamic aggregation supporting 30d, 90d, 120d, YTD, specific years, and multi-year time windows.
+    """
+
+    @classmethod
+    def get_periods_for_window(
+        cls,
+        corporation_id: int | None = None,
+        window: str = "90d",
+        year: int | None = None,
+    ) -> list[FatMonthPeriod]:
+        """
+        Returns FatMonthPeriod instances matching the requested window, ordered chronologically.
+        """
+        qs = FatMonthPeriod.objects.all()
+        if corporation_id:
+            qs = qs.filter(corporation_id=corporation_id)
+
+        all_periods = list(qs.order_by("-year", "-month"))
+        if not all_periods:
+            return []
+
+        if window == "30d":
+            matched = all_periods[:1]
+        elif window == "90d":
+            matched = all_periods[:3]
+        elif window == "120d":
+            matched = all_periods[:4]
+        elif window == "ytd":
+            current_year = timezone.now().year
+            matched = [p for p in all_periods if p.year == current_year]
+            if not matched:  # Fallback to the latest year available in data
+                latest_year = all_periods[0].year
+                matched = [p for p in all_periods if p.year == latest_year]
+        elif window.startswith("year_"):
+            try:
+                target_year = int(window.split("_")[1])
+                matched = [p for p in all_periods if p.year == target_year]
+            except (IndexError, ValueError):
+                matched = all_periods[:3]
+        elif window == "all":
+            matched = all_periods
+        else:
+            if year:
+                matched = [p for p in all_periods if p.year == year]
+            else:
+                matched = all_periods[:3]
+
+        # Return chronologically (oldest to newest) for charts and progressive tables
+        return sorted(matched, key=lambda p: (p.year, p.month))
+
+    @classmethod
+    def aggregate_data(
+        cls,
+        corporation_id: int | None = None,
+        window: str = "90d",
+        year: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Aggregates participant activity, dynamic FAT columns, corporation trends, and charts.
+        """
+        periods = cls.get_periods_for_window(corporation_id=corporation_id, window=window, year=year)
+
+        if not periods:
+            return {
+                "window": window,
+                "periods": [],
+                "dynamic_headers": [],
+                "pilots": [],
+                "total_fats": 0,
+                "active_pilots_count": 0,
+                "total_pilots_count": 0,
+                "trend_labels": [],
+                "trend_values": [],
+                "top_pilots_labels": [],
+                "top_pilots_values": [],
+                "fat_type_distribution": {},
+            }
+
+        period_ids = [p.id for p in periods]
+        entries = (
+            FatEntry.objects.filter(period_id__in=period_ids)
+            .select_related("character", "period")
+            .order_by("character_name")
+        )
+
+        # Collect dynamic headers across all entries in the window
+        dynamic_headers_set: set[str] = set()
+        for e in entries:
+            dynamic_headers_set.update(e.fat_details.keys())
+        dynamic_headers = sorted(list(dynamic_headers_set))
+
+        # Group by character
+        pilot_records: dict[str, dict[str, Any]] = {}
+        fat_type_distribution: dict[str, int] = defaultdict(int)
+
+        for e in entries:
+            name = e.character_name
+            if name not in pilot_records:
+                pilot_records[name] = {
+                    "character_name": name,
+                    "character_id": e.character.character_id if e.character else None,
+                    "main_character_name": e.main_character_name or name,
+                    "is_main": e.is_main,
+                    "total_fats": 0,
+                    "period_fats": {p.id: 0 for p in periods},
+                    "fat_details": {h: 0 for h in dynamic_headers},
+                    "active_months": 0,
+                }
+
+            pilot_records[name]["total_fats"] += e.total_fats
+            pilot_records[name]["period_fats"][e.period_id] += e.total_fats
+            if e.total_fats > 0:
+                pilot_records[name]["active_months"] += 1
+
+            for h, count in e.fat_details.items():
+                if h in pilot_records[name]["fat_details"]:
+                    pilot_records[name]["fat_details"][h] += count
+                fat_type_distribution[h] += count
+
+        # Convert to list and compute dynamic values list per pilot for template DataTables
+        pilot_list = list(pilot_records.values())
+        for p in pilot_list:
+            p["dynamic_values"] = [p["fat_details"].get(h, 0) for h in dynamic_headers]
+            p["period_values"] = [p["period_fats"].get(period.id, 0) for period in periods]
+            p["avg_fats_per_month"] = round(p["total_fats"] / len(periods), 1) if periods else 0
+
+        # Sort pilots by total FATs descending
+        pilot_list.sort(key=lambda x: x["total_fats"], reverse=True)
+
+        # Chart Data
+        trend_labels = [p.label for p in periods]
+        trend_values = [p.total_fats for p in periods]
+
+        top_10 = pilot_list[:10]
+        top_pilots_labels = [p["character_name"] for p in top_10]
+        top_pilots_values = [p["total_fats"] for p in top_10]
+
+        total_fats = sum(p.total_fats for p in periods)
+        active_pilots_count = sum(1 for p in pilot_list if p["total_fats"] > 0)
+        total_pilots_count = len(pilot_list)
+
+        return {
+            "window": window,
+            "periods": periods,
+            "dynamic_headers": dynamic_headers,
+            "pilots": pilot_list,
+            "total_fats": total_fats,
+            "active_pilots_count": active_pilots_count,
+            "total_pilots_count": total_pilots_count,
+            "trend_labels": trend_labels,
+            "trend_values": trend_values,
+            "top_pilots_labels": top_pilots_labels,
+            "top_pilots_values": top_pilots_values,
+            "fat_type_distribution": dict(fat_type_distribution),
+        }

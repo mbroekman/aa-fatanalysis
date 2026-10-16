@@ -92,6 +92,21 @@ SAMPLE_HTML_CHARTS = """
             }
         });
     </script>
+    <canvas id="ship-bar-stacked"></canvas>
+    <script>
+        chartInfo.push({
+            element: document.getElementById("ship-bar-stacked"),
+            type: 'bar',
+            data: {
+                datasets: [
+                    { label: 'Hurricane Fleet Issue', data: [0, 5, 0, 5] },
+                    { label: 'Cerberus', data: [3, 0, 2] },
+                    { label: '# of FATs', data: [15] }
+                ],
+                labels: ['1', '2', '3', '4']
+            }
+        });
+    </script>
 </div>
 """
 
@@ -305,7 +320,7 @@ class TestServices(TestCase):
         self.assertIn("QRF", agg_all["dynamic_headers"])
 
     def test_parse_html_charts(self):
-        fats_by_time, fats_by_weekday = FatIngestionService.parse_html_charts(SAMPLE_HTML_CHARTS)
+        fats_by_time, fats_by_weekday, fats_by_ship = FatIngestionService.parse_html_charts(SAMPLE_HTML_CHARTS)
         self.assertEqual(len(fats_by_time), 24)
         self.assertEqual(fats_by_time["0"], 1)
         self.assertEqual(fats_by_time["23"], 24)
@@ -315,6 +330,11 @@ class TestServices(TestCase):
         self.assertEqual(fats_by_weekday["Monday"], 10)
         self.assertEqual(fats_by_weekday["Sunday"], 70)
         self.assertEqual(sum(fats_by_weekday.values()), 280)
+
+        self.assertEqual(len(fats_by_ship), 2)
+        self.assertEqual(fats_by_ship["Hurricane Fleet Issue"], 10)
+        self.assertEqual(fats_by_ship["Cerberus"], 5)
+        self.assertNotIn("# of FATs", fats_by_ship)
 
     def test_aggregate_fats_by_time_and_weekday(self):
         # Create two periods with time and weekday chart metrics
@@ -370,3 +390,36 @@ class TestServices(TestCase):
         self.assertEqual(len(agg["fats_by_weekday_labels"]), 7)
         self.assertEqual(agg["fats_by_weekday_values"][0], 15)
         self.assertEqual(agg["fats_by_weekday_values"][6], 75)
+
+    def test_aggregate_fats_by_ship(self):
+        fats_by_ship_p1 = {"Hurricane Fleet Issue": 20, "Cerberus": 10, "Scimitar": 5}
+        fats_by_ship_p2 = {"Hurricane Fleet Issue": 5, "Cerberus": 15, "Sabre": 8}
+
+        FatIngestionService.ingest_records(
+            corporation_id=98089258,
+            corporation_name="Game of Drones",
+            year=2026,
+            month=3,
+            records=[],
+            fats_by_ship=fats_by_ship_p1,
+        )
+        FatIngestionService.ingest_records(
+            corporation_id=98089258,
+            corporation_name="Game of Drones",
+            year=2026,
+            month=4,
+            records=[],
+            fats_by_ship=fats_by_ship_p2,
+        )
+
+        agg = FatAggregationService.aggregate_data(corporation_id=98089258, window="all")
+        self.assertIn("ship_type_distribution", agg)
+        ship_dist = agg["ship_type_distribution"]
+        # Hurricane: 20 + 5 = 25
+        self.assertEqual(ship_dist["Hurricane Fleet Issue"], 25)
+        # Cerberus: 10 + 15 = 25
+        self.assertEqual(ship_dist["Cerberus"], 25)
+        # Sabre: 8
+        self.assertEqual(ship_dist["Sabre"], 8)
+        # Scimitar: 5
+        self.assertEqual(ship_dist["Scimitar"], 5)

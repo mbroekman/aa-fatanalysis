@@ -137,8 +137,8 @@ class AfatScraperService:
                 try:
                     html_content = self.fetch_month_report(y, m)
                     records = FatIngestionService.parse_html_table(html_content)
-                    fats_by_time, fats_by_weekday = FatIngestionService.parse_html_charts(html_content)
-                    if not records and not fats_by_time and not fats_by_weekday:
+                    fats_by_time, fats_by_weekday, fats_by_ship = FatIngestionService.parse_html_charts(html_content)
+                    if not records and not fats_by_time and not fats_by_weekday and not fats_by_ship:
                         summary["skipped_periods"] += 1
                         log_lines.append(f"  - {period_label}: No pilot records found (skipped).")
                         continue
@@ -152,6 +152,7 @@ class AfatScraperService:
                         synced_by=synced_by,
                         fats_by_time=fats_by_time,
                         fats_by_weekday=fats_by_weekday,
+                        fats_by_ship=fats_by_ship,
                     )
                     summary["ingested_periods"] += 1
                     summary["total_fats"] += period.total_fats
@@ -384,16 +385,17 @@ class FatIngestionService:
         return generic_records
 
     @staticmethod
-    def parse_html_charts(html_content: str) -> tuple[dict[str, int], dict[str, int]]:
+    def parse_html_charts(html_content: str) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
         """
-        Extracts 'time-line' (hours 0..23) and 'weekday-line' (Monday..Sunday) chart datasets
-        from INIT Auth AFAT HTML page.
+        Extracts 'time-line' (hours 0..23), 'weekday-line' (Monday..Sunday), and 'ship-bar-stacked'
+        chart datasets from INIT Auth AFAT HTML page.
         """
         fats_by_time: dict[str, int] = {}
         fats_by_weekday: dict[str, int] = {}
+        fats_by_ship: dict[str, int] = {}
 
         if not html_content or not html_content.strip():
-            return fats_by_time, fats_by_weekday
+            return fats_by_time, fats_by_weekday, fats_by_ship
 
         # 1. FATs by time (24 hours: 0-23)
         time_match = re.search(r"time-line.*?data:\s*\[([0-9,\s]+)\]", html_content, re.DOTALL)
@@ -410,7 +412,24 @@ class FatIngestionService:
             for idx, day in enumerate(day_names):
                 fats_by_weekday[day] = vals[idx] if idx < len(vals) else 0
 
-        return fats_by_time, fats_by_weekday
+        # 3. FATs by ship type (ship-bar-stacked)
+        ship_block_match = re.search(r"ship-bar-stacked.*?</script>", html_content, re.DOTALL)
+        if ship_block_match:
+            script_chunk = ship_block_match.group(0)
+            ship_datasets = re.findall(
+                r"label:\s*['\"]([^'\"]+)['\"],[^}]*?data:\s*\[([0-9,\s]+)\]",
+                script_chunk,
+            )
+            for label, data_str in ship_datasets:
+                clean_label = label.strip()
+                if clean_label in {"# of FATs", "Total"} or not clean_label:
+                    continue
+                counts = [int(x.strip()) for x in data_str.split(",") if x.strip()]
+                total = sum(counts)
+                if total > 0:
+                    fats_by_ship[clean_label] = fats_by_ship.get(clean_label, 0) + total
+
+        return fats_by_time, fats_by_weekday, fats_by_ship
 
     @classmethod
     @transaction.atomic
@@ -424,6 +443,7 @@ class FatIngestionService:
         synced_by: User | None = None,
         fats_by_time: dict[str, int] | None = None,
         fats_by_weekday: dict[str, int] | None = None,
+        fats_by_ship: dict[str, int] | None = None,
     ) -> FatMonthPeriod:
         """
         Atomically ingests a batch of records into a specific FatMonthPeriod.
@@ -496,6 +516,8 @@ class FatIngestionService:
             period.fats_by_time = fats_by_time
         if fats_by_weekday is not None:
             period.fats_by_weekday = fats_by_weekday
+        if fats_by_ship is not None:
+            period.fats_by_ship = fats_by_ship
         period.save()
 
         # Update sync config logs if available
@@ -594,6 +616,7 @@ class FatAggregationService:
                 "top_pilots_labels": [],
                 "top_pilots_values": [],
                 "fat_type_distribution": {},
+                "ship_type_distribution": {},
                 "fats_by_time_labels": [f"{h:02d}:00" for h in range(24)],
                 "fats_by_time_values": [0] * 24,
                 "fats_by_weekday_labels": [
@@ -709,6 +732,28 @@ class FatAggregationService:
         fats_by_weekday_labels = [str(w) for w in weekday_display_names]
         fats_by_weekday_values = [weekday_counts[d] for d in raw_weekday_names]
 
+        # Chart Data: Ship Distribution across active periods (Top 12 + Other Ships)
+        raw_ship_counts: dict[str, int] = defaultdict(int)
+        for period in periods:
+            if period.fats_by_ship and isinstance(period.fats_by_ship, dict):
+                for ship_name, count in period.fats_by_ship.items():
+                    try:
+                        c = int(count)
+                        if c > 0:
+                            raw_ship_counts[ship_name] += c
+                    except (ValueError, TypeError):
+                        pass
+
+        sorted_ships = sorted(raw_ship_counts.items(), key=lambda x: x[1], reverse=True)
+        ship_type_distribution: dict[str, int] = {}
+        if sorted_ships:
+            top_ships = sorted_ships[:12]
+            for ship, count in top_ships:
+                ship_type_distribution[ship] = count
+            other_ships_count = sum(c for _, c in sorted_ships[12:])
+            if other_ships_count > 0:
+                ship_type_distribution[str(_("Other Ships"))] = other_ships_count
+
         return {
             "window": window,
             "periods": periods,
@@ -722,6 +767,7 @@ class FatAggregationService:
             "top_pilots_labels": top_pilots_labels,
             "top_pilots_values": top_pilots_values,
             "fat_type_distribution": dict(fat_type_distribution),
+            "ship_type_distribution": ship_type_distribution,
             "fats_by_time_labels": fats_by_time_labels,
             "fats_by_time_values": fats_by_time_values,
             "fats_by_weekday_labels": fats_by_weekday_labels,

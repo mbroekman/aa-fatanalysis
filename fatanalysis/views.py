@@ -70,6 +70,7 @@ def index(request: HttpRequest) -> HttpResponse:
         "top_pilots_labels": agg_data["top_pilots_labels"],
         "top_pilots_values": agg_data["top_pilots_values"],
         "fat_type_distribution": agg_data["fat_type_distribution"],
+        "ship_type_distribution": agg_data["ship_type_distribution"],
         "fats_by_time_labels": agg_data["fats_by_time_labels"],
         "fats_by_time_values": agg_data["fats_by_time_values"],
         "fats_by_weekday_labels": agg_data["fats_by_weekday_labels"],
@@ -187,8 +188,8 @@ def sync_management(request: HttpRequest) -> HttpResponse:
                 try:
                     html_content = scraper.fetch_month_report(year, month)
                     records = FatIngestionService.parse_html_table(html_content)
-                    fats_by_time, fats_by_weekday = FatIngestionService.parse_html_charts(html_content)
-                    if not records and not fats_by_time and not fats_by_weekday:
+                    fats_by_time, fats_by_weekday, fats_by_ship = FatIngestionService.parse_html_charts(html_content)
+                    if not records and not fats_by_time and not fats_by_weekday and not fats_by_ship:
                         messages.warning(
                             request,
                             _("No pilot records found on INIT Auth for %(month)s/%(year)s.")
@@ -205,6 +206,7 @@ def sync_management(request: HttpRequest) -> HttpResponse:
                         synced_by=request.user if isinstance(request.user, User) else None,
                         fats_by_time=fats_by_time,
                         fats_by_weekday=fats_by_weekday,
+                        fats_by_ship=fats_by_ship,
                     )
                     messages.success(
                         request,
@@ -311,6 +313,19 @@ def period_detail(request: HttpRequest, period_id: int) -> HttpResponse:
     fats_by_weekday_values = (
         [int(period.fats_by_weekday.get(d, 0)) for d in raw_weekday_names] if period.fats_by_weekday else [0] * 7
     )
+    ship_type_distribution: dict[str, int] = {}
+    if period.fats_by_ship and isinstance(period.fats_by_ship, dict):
+        sorted_ships = sorted(
+            [(k, int(v)) for k, v in period.fats_by_ship.items() if int(v) > 0],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        if sorted_ships:
+            for ship, count in sorted_ships[:12]:
+                ship_type_distribution[ship] = count
+            other_ships_count = sum(c for _, c in sorted_ships[12:])
+            if other_ships_count > 0:
+                ship_type_distribution[str(_("Other Ships"))] = other_ships_count
 
     context = {
         "title": _("Monthly Period: %(period)s") % {"period": period.label},
@@ -319,6 +334,7 @@ def period_detail(request: HttpRequest, period_id: int) -> HttpResponse:
         "dynamic_headers": dynamic_headers,
         "top_labels": top_labels,
         "top_values": top_values,
+        "ship_type_distribution": ship_type_distribution,
         "fats_by_time_labels": fats_by_time_labels,
         "fats_by_time_values": fats_by_time_values,
         "fats_by_weekday_labels": fats_by_weekday_labels,

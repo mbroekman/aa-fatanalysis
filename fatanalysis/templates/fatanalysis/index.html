@@ -136,17 +136,17 @@
     <div class="col-lg-4">
         <div class="card shadow-sm h-100">
             <div class="card-header">
-                <span class="fw-bold"><i class="fas fa-chart-pie me-1 text-info"></i> {% trans "Fleet Types Breakdown" %}</span>
+                <span class="fw-bold"><i class="fas fa-rocket me-1 text-info"></i> {% trans "Ship Types Breakdown" %}</span>
             </div>
             <div class="card-body">
-                {% if fat_type_distribution %}
+                {% if ship_type_distribution or fat_type_distribution %}
                     <div style="position: relative; height: 260px;">
                         <canvas id="typeChart"></canvas>
                     </div>
                 {% else %}
                     <div class="text-center py-5 text-muted">
                         <i class="fas fa-info-circle fa-2x mb-2"></i>
-                        <p>{% trans "No type breakdown available." %}</p>
+                        <p>{% trans "No ship type breakdown available." %}</p>
                     </div>
                 {% endif %}
             </div>
@@ -328,16 +328,17 @@
             }
             {% endif %}
 
-            // Doughnut Distribution Chart
-            {% if fat_type_distribution %}
+            // Doughnut Distribution Chart (Ship Types Breakdown)
+            {% if ship_type_distribution or fat_type_distribution %}
             const typeCtx = document.getElementById('typeChart');
             if (typeCtx) {
-                const typeData = {{ fat_type_distribution|safe }};
+                const typeData = {% if ship_type_distribution %}{{ ship_type_distribution|safe }}{% else %}{{ fat_type_distribution|safe }}{% endif %};
                 const labels = Object.keys(typeData);
                 const values = Object.values(typeData);
                 const colors = [
                     '#36A2EB', '#4BC0C0', '#FF6384', '#FF9F40', '#9966FF',
-                    '#FFCE56', '#4D5360', '#8AC926', '#1982C4', '#6A4C93'
+                    '#FFCE56', '#20c997', '#8AC926', '#1982C4', '#6A4C93',
+                    '#fd7e14', '#0dcaf0', '#6c757d'
                 ];
 
                 new Chart(typeCtx.getContext('2d'), {

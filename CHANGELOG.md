@@ -10,6 +10,11 @@
 - Add longitudinal player FAT detail page with trend charts and participation breakdown
 - Upgrade templates to strict Bootstrap 5 with AA top header version branding
 
+### Fix
+
+- Improve contrast and legibility of inactive time window period filters and secondary navigation buttons in dark mode (FATANALYSIS-17)
+- Fix DataTables TN/18 warning by replacing server-rendered empty row with native emptyTable message
+
 ## v0.2.0 (2026-08-26)
 
 ### Feat

@@ -154,6 +154,50 @@
     </div>
 </div>
 
+<!-- Activity Distribution Row: FATs by Time & FATs per Day -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="fas fa-clock me-1 text-warning"></i> {% trans "FATs by Time" %}</span>
+                <span class="badge bg-secondary">{% trans "EVE Time (UTC)" %}</span>
+            </div>
+            <div class="card-body">
+                {% if has_time_data %}
+                    <div style="position: relative; height: 260px;">
+                        <canvas id="timeChart"></canvas>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-clock fa-2x mb-2 opacity-50"></i>
+                        <p class="mb-0">{% trans "No hourly time distribution data available for this time window." %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="fas fa-calendar-day me-1 text-success"></i> {% trans "FATs per Day" %}</span>
+                <span class="badge bg-secondary">{% trans "Weekday" %}</span>
+            </div>
+            <div class="card-body">
+                {% if has_weekday_data %}
+                    <div style="position: relative; height: 260px;">
+                        <canvas id="weekdayChart"></canvas>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-calendar-day fa-2x mb-2 opacity-50"></i>
+                        <p class="mb-0">{% trans "No weekday distribution data available for this time window." %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Pilots Breakdown Table -->
 <div class="card shadow-sm mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -314,6 +358,84 @@
                                 position: 'right',
                                 labels: { boxWidth: 12, font: { size: 10 } }
                             }
+                        }
+                    }
+                });
+            }
+            {% endif %}
+
+            // FATs by Time (Hourly Line Chart)
+            {% if has_time_data %}
+            const timeCtx = document.getElementById('timeChart');
+            if (timeCtx) {
+                new Chart(timeCtx.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: {{ fats_by_time_labels|safe }},
+                        datasets: [{
+                            label: '{% trans "# of FATs" %}',
+                            data: {{ fats_by_time_values|safe }},
+                            backgroundColor: 'rgba(255, 193, 7, 0.25)',
+                            borderColor: '#ffc107',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#ffc107'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(255, 255, 255, 0.08)' }
+                            },
+                            x: {
+                                grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                                ticks: { maxRotation: 45, minRotation: 0 }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            }
+            {% endif %}
+
+            // FATs per Day (Weekday Bar Chart)
+            {% if has_weekday_data %}
+            const weekdayCtx = document.getElementById('weekdayChart');
+            if (weekdayCtx) {
+                new Chart(weekdayCtx.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: {{ fats_by_weekday_labels|safe }},
+                        datasets: [{
+                            label: '{% trans "# of FATs" %}',
+                            data: {{ fats_by_weekday_values|safe }},
+                            backgroundColor: 'rgba(25, 135, 84, 0.65)',
+                            borderColor: '#198754',
+                            borderWidth: 1.5,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(255, 255, 255, 0.08)' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
                         }
                     }
                 });

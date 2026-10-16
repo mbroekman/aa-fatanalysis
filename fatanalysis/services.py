@@ -9,6 +9,7 @@ import calendar
 import csv
 import io
 import logging
+import re
 from collections import defaultdict
 from typing import Any
 
@@ -136,7 +137,8 @@ class AfatScraperService:
                 try:
                     html_content = self.fetch_month_report(y, m)
                     records = FatIngestionService.parse_html_table(html_content)
-                    if not records:
+                    fats_by_time, fats_by_weekday = FatIngestionService.parse_html_charts(html_content)
+                    if not records and not fats_by_time and not fats_by_weekday:
                         summary["skipped_periods"] += 1
                         log_lines.append(f"  - {period_label}: No pilot records found (skipped).")
                         continue
@@ -148,6 +150,8 @@ class AfatScraperService:
                         month=m,
                         records=records,
                         synced_by=synced_by,
+                        fats_by_time=fats_by_time,
+                        fats_by_weekday=fats_by_weekday,
                     )
                     summary["ingested_periods"] += 1
                     summary["total_fats"] += period.total_fats
@@ -379,6 +383,35 @@ class FatIngestionService:
 
         return generic_records
 
+    @staticmethod
+    def parse_html_charts(html_content: str) -> tuple[dict[str, int], dict[str, int]]:
+        """
+        Extracts 'time-line' (hours 0..23) and 'weekday-line' (Monday..Sunday) chart datasets
+        from INIT Auth AFAT HTML page.
+        """
+        fats_by_time: dict[str, int] = {}
+        fats_by_weekday: dict[str, int] = {}
+
+        if not html_content or not html_content.strip():
+            return fats_by_time, fats_by_weekday
+
+        # 1. FATs by time (24 hours: 0-23)
+        time_match = re.search(r"time-line.*?data:\s*\[([0-9,\s]+)\]", html_content, re.DOTALL)
+        if time_match:
+            vals = [int(x.strip()) for x in time_match.group(1).split(",") if x.strip()]
+            for h in range(24):
+                fats_by_time[str(h)] = vals[h] if h < len(vals) else 0
+
+        # 2. FATs by weekday (7 days: Monday..Sunday)
+        weekday_match = re.search(r"weekday-line.*?data:\s*\[([0-9,\s]+)\]", html_content, re.DOTALL)
+        if weekday_match:
+            vals = [int(x.strip()) for x in weekday_match.group(1).split(",") if x.strip()]
+            day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            for idx, day in enumerate(day_names):
+                fats_by_weekday[day] = vals[idx] if idx < len(vals) else 0
+
+        return fats_by_time, fats_by_weekday
+
     @classmethod
     @transaction.atomic
     def ingest_records(
@@ -389,6 +422,8 @@ class FatIngestionService:
         month: int,
         records: list[dict[str, Any]],
         synced_by: User | None = None,
+        fats_by_time: dict[str, int] | None = None,
+        fats_by_weekday: dict[str, int] | None = None,
     ) -> FatMonthPeriod:
         """
         Atomically ingests a batch of records into a specific FatMonthPeriod.
@@ -457,6 +492,10 @@ class FatIngestionService:
         FatEntry.objects.bulk_create(entries_to_create)
 
         period.total_fats = sum(e.total_fats for e in entries_to_create)
+        if fats_by_time is not None:
+            period.fats_by_time = fats_by_time
+        if fats_by_weekday is not None:
+            period.fats_by_weekday = fats_by_weekday
         period.save()
 
         # Update sync config logs if available
@@ -555,6 +594,18 @@ class FatAggregationService:
                 "top_pilots_labels": [],
                 "top_pilots_values": [],
                 "fat_type_distribution": {},
+                "fats_by_time_labels": [f"{h:02d}:00" for h in range(24)],
+                "fats_by_time_values": [0] * 24,
+                "fats_by_weekday_labels": [
+                    str(_("Monday")),
+                    str(_("Tuesday")),
+                    str(_("Wednesday")),
+                    str(_("Thursday")),
+                    str(_("Friday")),
+                    str(_("Saturday")),
+                    str(_("Sunday")),
+                ],
+                "fats_by_weekday_values": [0] * 7,
             }
 
         period_ids = [p.id for p in periods]
@@ -608,7 +659,7 @@ class FatAggregationService:
         # Sort pilots by total FATs descending
         pilot_list.sort(key=lambda x: x["total_fats"], reverse=True)
 
-        # Chart Data
+        # Chart Data: Monthly Trends
         trend_labels = [p.label for p in periods]
         trend_values = [p.total_fats for p in periods]
 
@@ -619,6 +670,44 @@ class FatAggregationService:
         total_fats = sum(p.total_fats for p in periods)
         active_pilots_count = sum(1 for p in pilot_list if p["total_fats"] > 0)
         total_pilots_count = len(pilot_list)
+
+        # Chart Data: Hourly Distribution (00:00 - 23:00)
+        time_counts: dict[str, int] = {str(h): 0 for h in range(24)}
+        for period in periods:
+            if period.fats_by_time and isinstance(period.fats_by_time, dict):
+                for h_str, val in period.fats_by_time.items():
+                    if h_str in time_counts:
+                        try:
+                            time_counts[h_str] += int(val)
+                        except (ValueError, TypeError):
+                            pass
+
+        fats_by_time_labels = [f"{h:02d}:00" for h in range(24)]
+        fats_by_time_values = [time_counts[str(h)] for h in range(24)]
+
+        # Chart Data: Weekday Distribution (Monday - Sunday)
+        raw_weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        weekday_display_names = [
+            _("Monday"),
+            _("Tuesday"),
+            _("Wednesday"),
+            _("Thursday"),
+            _("Friday"),
+            _("Saturday"),
+            _("Sunday"),
+        ]
+        weekday_counts: dict[str, int] = {d: 0 for d in raw_weekday_names}
+        for period in periods:
+            if period.fats_by_weekday and isinstance(period.fats_by_weekday, dict):
+                for d_str, val in period.fats_by_weekday.items():
+                    if d_str in weekday_counts:
+                        try:
+                            weekday_counts[d_str] += int(val)
+                        except (ValueError, TypeError):
+                            pass
+
+        fats_by_weekday_labels = [str(w) for w in weekday_display_names]
+        fats_by_weekday_values = [weekday_counts[d] for d in raw_weekday_names]
 
         return {
             "window": window,
@@ -633,4 +722,8 @@ class FatAggregationService:
             "top_pilots_labels": top_pilots_labels,
             "top_pilots_values": top_pilots_values,
             "fat_type_distribution": dict(fat_type_distribution),
+            "fats_by_time_labels": fats_by_time_labels,
+            "fats_by_time_values": fats_by_time_values,
+            "fats_by_weekday_labels": fats_by_weekday_labels,
+            "fats_by_weekday_values": fats_by_weekday_values,
         }

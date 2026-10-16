@@ -70,6 +70,12 @@ def index(request: HttpRequest) -> HttpResponse:
         "top_pilots_labels": agg_data["top_pilots_labels"],
         "top_pilots_values": agg_data["top_pilots_values"],
         "fat_type_distribution": agg_data["fat_type_distribution"],
+        "fats_by_time_labels": agg_data["fats_by_time_labels"],
+        "fats_by_time_values": agg_data["fats_by_time_values"],
+        "fats_by_weekday_labels": agg_data["fats_by_weekday_labels"],
+        "fats_by_weekday_values": agg_data["fats_by_weekday_values"],
+        "has_time_data": any(v > 0 for v in agg_data["fats_by_time_values"]),
+        "has_weekday_data": any(v > 0 for v in agg_data["fats_by_weekday_values"]),
         "table_columns_count": 5 + len(agg_data["periods"]) + len(agg_data["dynamic_headers"]),
     }
     return render(request, "fatanalysis/index.html", context)
@@ -181,7 +187,8 @@ def sync_management(request: HttpRequest) -> HttpResponse:
                 try:
                     html_content = scraper.fetch_month_report(year, month)
                     records = FatIngestionService.parse_html_table(html_content)
-                    if not records:
+                    fats_by_time, fats_by_weekday = FatIngestionService.parse_html_charts(html_content)
+                    if not records and not fats_by_time and not fats_by_weekday:
                         messages.warning(
                             request,
                             _("No pilot records found on INIT Auth for %(month)s/%(year)s.")
@@ -196,6 +203,8 @@ def sync_management(request: HttpRequest) -> HttpResponse:
                         month=month,
                         records=records,
                         synced_by=request.user if isinstance(request.user, User) else None,
+                        fats_by_time=fats_by_time,
+                        fats_by_weekday=fats_by_weekday,
                     )
                     messages.success(
                         request,
@@ -284,6 +293,25 @@ def period_detail(request: HttpRequest, period_id: int) -> HttpResponse:
     top_labels = [e.character_name for e in top_entries]
     top_values = [e.total_fats for e in top_entries]
 
+    fats_by_time_labels = [f"{h:02d}:00" for h in range(24)]
+    fats_by_time_values = (
+        [int(period.fats_by_time.get(str(h), 0)) for h in range(24)] if period.fats_by_time else [0] * 24
+    )
+    raw_weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    weekday_display_names = [
+        _("Monday"),
+        _("Tuesday"),
+        _("Wednesday"),
+        _("Thursday"),
+        _("Friday"),
+        _("Saturday"),
+        _("Sunday"),
+    ]
+    fats_by_weekday_labels = [str(w) for w in weekday_display_names]
+    fats_by_weekday_values = (
+        [int(period.fats_by_weekday.get(d, 0)) for d in raw_weekday_names] if period.fats_by_weekday else [0] * 7
+    )
+
     context = {
         "title": _("Monthly Period: %(period)s") % {"period": period.label},
         "period": period,
@@ -291,6 +319,12 @@ def period_detail(request: HttpRequest, period_id: int) -> HttpResponse:
         "dynamic_headers": dynamic_headers,
         "top_labels": top_labels,
         "top_values": top_values,
+        "fats_by_time_labels": fats_by_time_labels,
+        "fats_by_time_values": fats_by_time_values,
+        "fats_by_weekday_labels": fats_by_weekday_labels,
+        "fats_by_weekday_values": fats_by_weekday_values,
+        "has_time_data": any(v > 0 for v in fats_by_time_values),
+        "has_weekday_data": any(v > 0 for v in fats_by_weekday_values),
     }
     return render(request, "fatanalysis/period_detail.html", context)
 

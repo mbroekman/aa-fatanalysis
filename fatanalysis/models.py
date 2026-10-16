@@ -77,6 +77,8 @@ class FatMonthPeriod(models.Model):
     year = models.IntegerField(db_index=True, verbose_name=_("Year"))
     month = models.IntegerField(db_index=True, verbose_name=_("Month"))
     total_fats = models.IntegerField(default=0, verbose_name=_("Total FATs"))
+    fats_by_time = models.JSONField(default=dict, blank=True, verbose_name=_("FATs by Time"))
+    fats_by_weekday = models.JSONField(default=dict, blank=True, verbose_name=_("FATs by Weekday"))
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     synced_by = models.ForeignKey(

@@ -14,6 +14,7 @@
 - Add `fatanalysis_sync_all` Django management command for automated CLI/cron crawler synchronization
 - Enhance HTML scraper to automatically parse `corp-main-characters` tables and resolve character IDs
 - Remove obsolete CSV upload and paste functionality in favor of direct INIT Auth scraping
+- Add interactive "FATs by Time" (hourly distribution) and "FATs per Day" (weekday distribution) charts to dashboard overview and monthly details (FATANALYSIS-21)
 
 ### Fix
 

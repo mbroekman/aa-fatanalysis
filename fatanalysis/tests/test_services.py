@@ -65,6 +65,36 @@ SAMPLE_CORP_MAIN_HTML = """
 </table>
 """
 
+SAMPLE_HTML_CHARTS = """
+<div>
+    <canvas id="time-line"></canvas>
+    <script>
+        chartInfo.push({
+            element: document.getElementById("time-line"),
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: '# of FATs',
+                    data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+                }],
+                labels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+            }
+        });
+    </script>
+    <canvas id="weekday-line"></canvas>
+    <script>
+        chartInfo.push({
+            element: document.getElementById("weekday-line"),
+            type: 'bar',
+            data: {
+                datasets: [{ label: '# of FATs', data: [10, 20, 30, 40, 50, 60, 70] }],
+                labels: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            }
+        });
+    </script>
+</div>
+"""
+
 
 class TestServices(TestCase):
     @classmethod
@@ -273,3 +303,70 @@ class TestServices(TestCase):
         # Check dynamic headers
         self.assertIn("Strategic", agg_all["dynamic_headers"])
         self.assertIn("QRF", agg_all["dynamic_headers"])
+
+    def test_parse_html_charts(self):
+        fats_by_time, fats_by_weekday = FatIngestionService.parse_html_charts(SAMPLE_HTML_CHARTS)
+        self.assertEqual(len(fats_by_time), 24)
+        self.assertEqual(fats_by_time["0"], 1)
+        self.assertEqual(fats_by_time["23"], 24)
+        self.assertEqual(sum(fats_by_time.values()), sum(range(1, 25)))
+
+        self.assertEqual(len(fats_by_weekday), 7)
+        self.assertEqual(fats_by_weekday["Monday"], 10)
+        self.assertEqual(fats_by_weekday["Sunday"], 70)
+        self.assertEqual(sum(fats_by_weekday.values()), 280)
+
+    def test_aggregate_fats_by_time_and_weekday(self):
+        # Create two periods with time and weekday chart metrics
+        fats_by_time_p1 = {str(h): h for h in range(24)}
+        fats_by_weekday_p1 = {
+            "Monday": 10,
+            "Tuesday": 20,
+            "Wednesday": 30,
+            "Thursday": 40,
+            "Friday": 50,
+            "Saturday": 60,
+            "Sunday": 70,
+        }
+
+        fats_by_time_p2 = {str(h): 1 for h in range(24)}
+        fats_by_weekday_p2 = {
+            "Monday": 5,
+            "Tuesday": 5,
+            "Wednesday": 5,
+            "Thursday": 5,
+            "Friday": 5,
+            "Saturday": 5,
+            "Sunday": 5,
+        }
+
+        FatIngestionService.ingest_records(
+            corporation_id=98089258,
+            corporation_name="Game of Drones",
+            year=2026,
+            month=1,
+            records=[],
+            fats_by_time=fats_by_time_p1,
+            fats_by_weekday=fats_by_weekday_p1,
+        )
+        FatIngestionService.ingest_records(
+            corporation_id=98089258,
+            corporation_name="Game of Drones",
+            year=2026,
+            month=2,
+            records=[],
+            fats_by_time=fats_by_time_p2,
+            fats_by_weekday=fats_by_weekday_p2,
+        )
+
+        agg = FatAggregationService.aggregate_data(corporation_id=98089258, window="ytd")
+        self.assertEqual(len(agg["fats_by_time_labels"]), 24)
+        self.assertEqual(len(agg["fats_by_time_values"]), 24)
+        # Hour 0: 0 + 1 = 1; Hour 5: 5 + 1 = 6
+        self.assertEqual(agg["fats_by_time_values"][0], 1)
+        self.assertEqual(agg["fats_by_time_values"][5], 6)
+
+        # Monday: 10 + 5 = 15; Sunday: 70 + 5 = 75
+        self.assertEqual(len(agg["fats_by_weekday_labels"]), 7)
+        self.assertEqual(agg["fats_by_weekday_values"][0], 15)
+        self.assertEqual(agg["fats_by_weekday_values"][6], 75)

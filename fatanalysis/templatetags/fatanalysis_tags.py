@@ -9,7 +9,7 @@ register = template.Library()
 @register.simple_tag
 def fatanalysis_version() -> str:
     """Returns the package version."""
-    return getattr(fatanalysis, "__version__", "0.2.0")
+    return getattr(fatanalysis, "__version__", "1.0.0")
 
 
 @register.simple_tag

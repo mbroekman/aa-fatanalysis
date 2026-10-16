@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## v1.0.0 (2026-10-16)
+
 ### Feat
 
 - Redesign aa-fatanalysis for multi-year AFAT ingestion and dynamic time windows (FATANALYSIS-16)

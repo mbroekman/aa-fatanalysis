@@ -45,6 +45,26 @@ SAMPLE_HTML_TABLE = """
 </table>
 """
 
+SAMPLE_CORP_MAIN_HTML = """
+<table id="corp-main-characters">
+    <thead>
+        <tr><th>Character</th><th>FATs</th><th></th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Pilot Alpha</td>
+            <td>15</td>
+            <td><button class="btn" data-character-id="918578105"></button></td>
+        </tr>
+        <tr>
+            <td>Pilot Beta</td>
+            <td>5</td>
+            <td><button class="btn" data-character-id="920000001"></button></td>
+        </tr>
+    </tbody>
+</table>
+"""
+
 
 class TestServices(TestCase):
     @classmethod
@@ -87,6 +107,17 @@ class TestServices(TestCase):
         self.assertEqual(records[0]["character_name"], "Pilot Alpha")
         self.assertEqual(records[0]["total_fats"], 25)
         self.assertEqual(records[0]["fat_details"]["Strategic"], 15)
+
+    def test_parse_html_corp_main_characters(self):
+        records = FatIngestionService.parse_html_table(SAMPLE_CORP_MAIN_HTML)
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["character_name"], "Pilot Alpha")
+        self.assertEqual(records[0]["total_fats"], 15)
+        self.assertEqual(records[0]["character_id"], 918578105)
+        self.assertTrue(records[0]["is_main"])
+        self.assertEqual(records[1]["character_name"], "Pilot Beta")
+        self.assertEqual(records[1]["total_fats"], 5)
+        self.assertEqual(records[1]["character_id"], 920000001)
 
     def test_ingest_records_atomic(self):
         records = FatIngestionService.parse_csv(SAMPLE_CSV)
@@ -173,6 +204,29 @@ class TestServices(TestCase):
 
         content = scraper.fetch_report(target_url)
         self.assertEqual(content, SAMPLE_CSV)
+
+    def test_build_report_url(self):
+        scraper = AfatScraperService(config=self.config)
+        url = scraper.build_report_url(2026, 10)
+        expected = "https://zero.the-initiative.rocks/fleet-activity-tracking/statistics/corporation/98089258/2026/10/"
+        self.assertEqual(url, expected)
+
+    @responses.activate
+    def test_crawl_all_periods(self):
+        self.config.session_cookie = "valid_cookie"
+        self.config.save()
+        scraper = AfatScraperService(config=self.config)
+
+        # Mock two months: 2026-01 and 2026-02
+        url_jan = scraper.build_report_url(2026, 1)
+        url_feb = scraper.build_report_url(2026, 2)
+        responses.add(responses.GET, url_jan, body=SAMPLE_CORP_MAIN_HTML, status=200)
+        responses.add(responses.GET, url_feb, body="<html><body>No table</body></html>", status=200)
+
+        summary = scraper.crawl_all_periods(start_year=2026, end_year=2026, end_month=2)
+        self.assertEqual(summary["ingested_periods"], 1)
+        self.assertEqual(summary["skipped_periods"], 1)
+        self.assertEqual(summary["total_fats"], 20)
 
     def test_aggregation_service_windows(self):
         # Create 4 consecutive monthly periods: 2026-05, 2026-06, 2026-07, 2026-08

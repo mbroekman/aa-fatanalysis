@@ -5,6 +5,7 @@ Service layer for aa-fatanalysis:
 - Dynamic time-window aggregation (30d, 90d, 120d, YTD, multi-year)
 """
 
+import calendar
 import csv
 import io
 import logging
@@ -84,6 +85,98 @@ class AfatScraperService:
             raise PermissionError("Session cookie is invalid or expired (redirected to login).")
 
         return resp.text
+
+    def build_report_url(self, year: int, month: int, corporation_id: int | None = None) -> str:
+        """
+        Constructs the URL for the monthly corporation statistics page on INIT Auth.
+        """
+        base_url = self.config.source_url.rstrip("/")
+        corp_id = corporation_id or self.config.corporation_id
+        return f"{base_url}/statistics/corporation/{corp_id}/{year}/{month}/"
+
+    def fetch_month_report(self, year: int, month: int, corporation_id: int | None = None) -> str:
+        """
+        Fetches the monthly statistics HTML page for a corporation from INIT Auth.
+        """
+        url = self.build_report_url(year, month, corporation_id)
+        return self.fetch_report(url)
+
+    def crawl_all_periods(
+        self,
+        start_year: int = 2024,
+        end_year: int | None = None,
+        end_month: int | None = None,
+        synced_by: User | None = None,
+    ) -> dict[str, Any]:
+        """
+        Crawls and ingests all monthly FAT statistics from start_year up to end_year/end_month.
+        """
+        now = timezone.now()
+        target_end_year = end_year or now.year
+        target_end_month = end_month or now.month
+
+        summary: dict[str, Any] = {
+            "ingested_periods": 0,
+            "skipped_periods": 0,
+            "failed_periods": 0,
+            "total_fats": 0,
+            "details": [],
+        }
+
+        log_lines: list[str] = [
+            f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] Started bulk sync from {start_year}-01 to "
+            f"{target_end_year}-{target_end_month:02d}."
+        ]
+
+        # Iterate year by year, month by month
+        for y in range(start_year, target_end_year + 1):
+            max_m = target_end_month if y == target_end_year else 12
+            for m in range(1, max_m + 1):
+                period_label = f"{calendar.month_name[m]} {y}"
+                try:
+                    html_content = self.fetch_month_report(y, m)
+                    records = FatIngestionService.parse_html_table(html_content)
+                    if not records:
+                        summary["skipped_periods"] += 1
+                        log_lines.append(f"  - {period_label}: No pilot records found (skipped).")
+                        continue
+
+                    period = FatIngestionService.ingest_records(
+                        corporation_id=self.config.corporation_id,
+                        corporation_name=self.config.corporation_name,
+                        year=y,
+                        month=m,
+                        records=records,
+                        synced_by=synced_by,
+                    )
+                    summary["ingested_periods"] += 1
+                    summary["total_fats"] += period.total_fats
+                    summary["details"].append(
+                        {
+                            "year": y,
+                            "month": m,
+                            "label": period.label,
+                            "fats": period.total_fats,
+                            "pilots": len(records),
+                        }
+                    )
+                    log_lines.append(f"  + {period_label}: Ingested {len(records)} pilots, {period.total_fats} FATs.")
+                except Exception as e:
+                    logger.warning("Error fetching %s: %s", period_label, e)
+                    summary["failed_periods"] += 1
+                    log_lines.append(f"  ! {period_label}: Error: {e}")
+
+        # Update config sync status
+        try:
+            self.config.last_sync_at = timezone.now()
+            self.config.last_sync_status = "success" if summary["ingested_periods"] > 0 else "completed_empty"
+            full_log = "\n".join(log_lines) + "\n\n" + (self.config.last_sync_log or "")
+            self.config.last_sync_log = full_log[:4000]
+            self.config.save(update_fields=["last_sync_at", "last_sync_status", "last_sync_log"])
+        except Exception:
+            pass
+
+        return summary
 
 
 class FatIngestionService:
@@ -173,9 +266,54 @@ class FatIngestionService:
     @staticmethod
     def parse_html_table(html_content: str) -> list[dict[str, Any]]:
         """
-        Parses an HTML table (e.g. from an AFAT report webpage) into a standardized list of records.
+        Parses an HTML table (from INIT Auth statistics or generic reports) into standardized records.
+        Prioritizes the 'corp-main-characters' table from INIT Auth AFAT statistics.
         """
+        if not html_content or not html_content.strip():
+            return []
+
         soup = BeautifulSoup(html_content, "html.parser")
+
+        # 1. Prioritize standard AFAT 'corp-main-characters' table
+        main_table = soup.find("table", id="corp-main-characters")
+        if main_table:
+            records: list[dict[str, Any]] = []
+            tbody = main_table.find("tbody") or main_table
+            for tr in tbody.find_all("tr"):
+                td_cells = tr.find_all("td")
+                if not td_cells:
+                    continue
+                char_name = td_cells[0].get_text(strip=True)
+                if not char_name:
+                    continue
+
+                try:
+                    total_fats = int(td_cells[1].get_text(strip=True))
+                except (IndexError, ValueError, TypeError):
+                    total_fats = 0
+
+                btn = tr.find("button")
+                char_id = None
+                if btn and btn.has_attr("data-character-id"):
+                    raw_id = btn["data-character-id"]
+                    try:
+                        char_id = int(str(raw_id))
+                    except (ValueError, TypeError):
+                        char_id = None
+
+                records.append(
+                    {
+                        "character_name": char_name,
+                        "character_id": char_id,
+                        "is_main": True,
+                        "total_fats": total_fats,
+                        "fat_details": {},
+                        "ship_details": {},
+                    }
+                )
+            return records
+
+        # 2. Fallback to generic table parsing
         table = soup.find("table")
         if not table:
             return []
@@ -190,17 +328,17 @@ class FatIngestionService:
         if not headers:
             return []
 
-        records: list[dict[str, Any]] = []
+        generic_records: list[dict[str, Any]] = []
         tbody = table.find("tbody") or table  # type: ignore[union-attr]
         rows = tbody.find_all("tr")  # type: ignore[union-attr]
 
         for tr in rows:
-            cells = [td.get_text(strip=True) for td in tr.find_all("td")]
-            if not cells or len(cells) < len(headers):
+            cell_texts = [td.get_text(strip=True) for td in tr.find_all("td")]
+            if not cell_texts or len(cell_texts) < len(headers):
                 continue
 
-            row_dict = dict(zip(headers, cells))
-            char_name = row_dict.get("Main Character") or row_dict.get("Character") or cells[0]
+            row_dict: dict[str, str] = dict(zip(headers, cell_texts))
+            char_name = row_dict.get("Main Character") or row_dict.get("Character") or cell_texts[0]
             if not char_name:
                 continue
 
@@ -208,11 +346,19 @@ class FatIngestionService:
             is_main = str(active_val) in {"1", "true", "True"}
 
             try:
-                total_fats = int(row_dict.get("Total FATs") or row_dict.get("Total", "0") or "0")
+                total_val = row_dict.get("Total FATs") or row_dict.get("Total") or row_dict.get("FATs", "0") or "0"
+                total_fats = int(total_val)
             except (ValueError, TypeError):
                 total_fats = 0
 
-            standard_cols = {"main character", "character", "active for corporation tracking", "total fats", "total"}
+            standard_cols = {
+                "main character",
+                "character",
+                "active for corporation tracking",
+                "total fats",
+                "total",
+                "fats",
+            }
             fat_details: dict[str, int] = {}
             for col, val in row_dict.items():
                 if col.lower() not in standard_cols:
@@ -221,7 +367,7 @@ class FatIngestionService:
                     except (ValueError, TypeError):
                         pass
 
-            records.append(
+            generic_records.append(
                 {
                     "character_name": char_name,
                     "is_main": is_main,
@@ -231,7 +377,7 @@ class FatIngestionService:
                 }
             )
 
-        return records
+        return generic_records
 
     @classmethod
     @transaction.atomic
@@ -275,10 +421,12 @@ class FatIngestionService:
         for rec in records:
             char_name = rec["character_name"]
             eve_char = char_map.get(char_name)
+            if not eve_char and rec.get("character_id"):
+                eve_char = EveCharacter.objects.filter(character_id=rec["character_id"]).first()
 
-            main_char_id = None
-            main_char_name = ""
-            is_main = rec.get("is_main", False)
+            main_char_id = rec.get("character_id")
+            main_char_name = char_name
+            is_main = rec.get("is_main", True)
 
             if eve_char:
                 try:

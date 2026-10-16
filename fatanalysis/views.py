@@ -16,7 +16,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from .forms import FatDirectCsvForm, FatSyncConfigForm
+from .forms import FatSyncBulkForm, FatSyncConfigForm, FatSyncSingleMonthForm
 from .models import FatEntry, FatMonthPeriod, FatSyncConfig
 from .services import AfatScraperService, FatAggregationService, FatIngestionService
 
@@ -136,11 +136,12 @@ def player_detail(request: HttpRequest, character_name: str) -> HttpResponse:
 @permission_required("fatanalysis.manage_fatanalysis", raise_exception=True)
 def sync_management(request: HttpRequest) -> HttpResponse:
     """
-    Director view for managing AFAT scraper config, testing connections, and ingesting CSV data.
+    Director view for managing AFAT scraper config, testing connections, and syncing reports from INIT Auth.
     """
     config = FatSyncConfig.get_solo()
     config_form = FatSyncConfigForm(instance=config)
-    csv_form = FatDirectCsvForm()
+    month_form = FatSyncSingleMonthForm()
+    bulk_form = FatSyncBulkForm()
 
     if request.method == "POST":
         action = request.POST.get("action", "")
@@ -166,88 +167,83 @@ def sync_management(request: HttpRequest) -> HttpResponse:
                     messages.error(request, msg)
                 return redirect("fatanalysis:sync_management")
 
-        # Action 3: Direct CSV Upload / Paste
-        elif action == "direct_csv_import":
-            csv_form = FatDirectCsvForm(request.POST, request.FILES)
-            if csv_form.is_valid():
-                year = int(csv_form.cleaned_data["year"])
-                month = int(csv_form.cleaned_data["month"])
-                corp_name = csv_form.cleaned_data["corporation_name"]
-                csv_file = request.FILES.get("csv_file")
-                csv_text = csv_form.cleaned_data.get("csv_text")
+        # Action 3: Sync Single Month from INIT Auth
+        elif action == "sync_single_month":
+            month_form = FatSyncSingleMonthForm(request.POST)
+            if month_form.is_valid():
+                year = int(month_form.cleaned_data["year"])
+                month = int(month_form.cleaned_data["month"])
+                scraper = AfatScraperService(config=config)
+                try:
+                    html_content = scraper.fetch_month_report(year, month)
+                    records = FatIngestionService.parse_html_table(html_content)
+                    if not records:
+                        messages.warning(
+                            request,
+                            _("No pilot records found on INIT Auth for %(month)s/%(year)s.")
+                            % {"month": month, "year": year},
+                        )
+                        return redirect("fatanalysis:sync_management")
 
-                content = ""
-                if csv_file:
-                    try:
-                        content = csv_file.read().decode("utf-8")
-                    except UnicodeDecodeError:
-                        try:
-                            content = csv_file.read().decode("latin-1")
-                        except Exception as e:
-                            messages.error(request, _("Failed to decode uploaded file: %(err)s") % {"err": str(e)})
-                            return redirect("fatanalysis:sync_management")
-                elif csv_text:
-                    content = csv_text
-
-                records = FatIngestionService.parse_csv(content)
-                if not records:
-                    messages.error(request, _("No valid FAT records could be parsed. Check column headers and format."))
+                    period = FatIngestionService.ingest_records(
+                        corporation_id=config.corporation_id,
+                        corporation_name=config.corporation_name,
+                        year=year,
+                        month=month,
+                        records=records,
+                        synced_by=request.user if isinstance(request.user, User) else None,
+                    )
+                    messages.success(
+                        request,
+                        _("Successfully fetched and ingested %(count)s records for %(period)s (%(total)s total FATs).")
+                        % {"count": len(records), "period": period.label, "total": period.total_fats},
+                    )
+                    return redirect("fatanalysis:period_detail", period_id=period.id)
+                except Exception as e:
+                    logger.exception("Scraper fetch error for single month: %s", e)
+                    messages.error(request, _("Scraper error: %(err)s") % {"err": str(e)})
                     return redirect("fatanalysis:sync_management")
 
-                period = FatIngestionService.ingest_records(
-                    corporation_id=config.corporation_id,
-                    corporation_name=corp_name or config.corporation_name,
-                    year=year,
-                    month=month,
-                    records=records,
-                    synced_by=request.user if isinstance(request.user, User) else None,
-                )
-                messages.success(
-                    request,
-                    _("Successfully ingested %(count)s records for %(period)s (%(total)s total FATs).")
-                    % {"count": len(records), "period": period.label, "total": period.total_fats},
-                )
-                return redirect("fatanalysis:period_detail", period_id=period.id)
+        # Action 4: Initial Bulk Sync / Historical Crawl
+        elif action == "sync_bulk_history":
+            bulk_form = FatSyncBulkForm(request.POST)
+            if bulk_form.is_valid():
+                start_year = int(bulk_form.cleaned_data["start_year"])
+                end_year = int(bulk_form.cleaned_data["end_year"])
+                end_month = int(bulk_form.cleaned_data["end_month"])
 
-        # Action 4: Scrape & Ingest via URL
-        elif action == "scrape_url":
-            target_url = request.POST.get("report_url", "").strip()
-            year = int(request.POST.get("scrape_year", timezone.now().year))
-            month = int(request.POST.get("scrape_month", timezone.now().month))
-            if not target_url:
-                messages.error(request, _("Please provide a valid report URL to scrape."))
-                return redirect("fatanalysis:sync_management")
-
-            scraper = AfatScraperService(config=config)
-            try:
-                raw_content = scraper.fetch_report(target_url)
-                # Auto-detect if CSV or HTML table
-                records = FatIngestionService.parse_csv(raw_content)
-                if not records:
-                    records = FatIngestionService.parse_html_table(raw_content)
-
-                if not records:
-                    messages.error(request, _("Could not extract any FAT records from the given URL response."))
+                scraper = AfatScraperService(config=config)
+                try:
+                    summary = scraper.crawl_all_periods(
+                        start_year=start_year,
+                        end_year=end_year,
+                        end_month=end_month,
+                        synced_by=request.user if isinstance(request.user, User) else None,
+                    )
+                    messages.success(
+                        request,
+                        _(
+                            "Initial bulk sync completed: %(ingested)s monthly periods ingested "
+                            "(%(total)s total FATs), %(skipped)s skipped without records."
+                        )
+                        % {
+                            "ingested": summary["ingested_periods"],
+                            "total": summary["total_fats"],
+                            "skipped": summary["skipped_periods"],
+                        },
+                    )
+                    return redirect("fatanalysis:index")
+                except Exception as e:
+                    logger.exception("Bulk sync crawler error: %s", e)
+                    messages.error(request, _("Bulk sync error: %(err)s") % {"err": str(e)})
                     return redirect("fatanalysis:sync_management")
 
-                period = FatIngestionService.ingest_records(
-                    corporation_id=config.corporation_id,
-                    corporation_name=config.corporation_name,
-                    year=year,
-                    month=month,
-                    records=records,
-                    synced_by=request.user if isinstance(request.user, User) else None,
-                )
-                messages.success(
-                    request,
-                    _("Successfully scraped and ingested %(count)s records for %(period)s.")
-                    % {"count": len(records), "period": period.label},
-                )
-                return redirect("fatanalysis:period_detail", period_id=period.id)
-            except Exception as e:
-                logger.exception("Scraper fetch error: %s", e)
-                messages.error(request, _("Scraper error: %(err)s") % {"err": str(e)})
-                return redirect("fatanalysis:sync_management")
+        # Action 5: Clear Sync Log
+        elif action == "clear_log":
+            config.last_sync_log = ""
+            config.save(update_fields=["last_sync_log"])
+            messages.info(request, _("Sync log cleared."))
+            return redirect("fatanalysis:sync_management")
 
     # List of all available periods
     periods = FatMonthPeriod.objects.filter(corporation_id=config.corporation_id).order_by("-year", "-month")
@@ -256,7 +252,8 @@ def sync_management(request: HttpRequest) -> HttpResponse:
         "title": _("FAT Sync & Ingestion Management"),
         "config": config,
         "config_form": config_form,
-        "csv_form": csv_form,
+        "month_form": month_form,
+        "bulk_form": bulk_form,
         "periods": periods,
     }
     return render(request, "fatanalysis/sync_management.html", context)

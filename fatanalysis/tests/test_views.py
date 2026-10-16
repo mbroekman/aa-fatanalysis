@@ -1,5 +1,6 @@
 """Unit tests for aa-fatanalysis views."""
 
+import responses
 from django.contrib.auth.models import Permission, User
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -128,22 +129,74 @@ class TestViews(TestCase):
         config = FatSyncConfig.get_solo()
         self.assertEqual(config.session_cookie, "new_session_id_xyz")
 
-    def test_sync_management_direct_csv_import(self):
+    @responses.activate
+    def test_sync_management_single_month(self):
         self.client.login(username="director", password="password")
+        config = FatSyncConfig.get_solo()
+        config.session_cookie = "valid_cookie"
+        config.save()
+
+        url = (
+            f"https://zero.the-initiative.rocks/fleet-activity-tracking/statistics/corporation/"
+            f"{config.corporation_id}/2026/9/"
+        )
+        responses.add(
+            responses.GET,
+            url,
+            body="""<table id="corp-main-characters">
+            <tbody>
+                <tr><td>Pilot Alpha</td><td>12</td><td><button data-character-id="918578105"></button></td></tr>
+            </tbody>
+            </table>""",
+            status=200,
+        )
+
         post_data = {
-            "action": "direct_csv_import",
+            "action": "sync_single_month",
             "year": 2026,
             "month": 9,
-            "corporation_name": "Game of Drones",
-            "csv_text": SAMPLE_CSV,
         }
         resp = self.client.post(reverse("fatanalysis:sync_management"), post_data)
         self.assertEqual(resp.status_code, 302)
 
         # Verify created period
         new_period = FatMonthPeriod.objects.get(year=2026, month=9)
-        self.assertEqual(new_period.total_fats, 10)
+        self.assertEqual(new_period.total_fats, 12)
         self.assertEqual(new_period.entries.count(), 1)
+
+    @responses.activate
+    def test_sync_management_bulk_history(self):
+        self.client.login(username="director", password="password")
+        config = FatSyncConfig.get_solo()
+        config.session_cookie = "valid_cookie"
+        config.save()
+
+        url = (
+            f"https://zero.the-initiative.rocks/fleet-activity-tracking/statistics/corporation/"
+            f"{config.corporation_id}/2026/1/"
+        )
+        responses.add(
+            responses.GET,
+            url,
+            body="""<table id="corp-main-characters">
+            <tbody>
+                <tr><td>Pilot Alpha</td><td>20</td><td><button data-character-id="918578105"></button></td></tr>
+            </tbody>
+            </table>""",
+            status=200,
+        )
+
+        post_data = {
+            "action": "sync_bulk_history",
+            "start_year": 2026,
+            "end_year": 2026,
+            "end_month": 1,
+        }
+        resp = self.client.post(reverse("fatanalysis:sync_management"), post_data)
+        self.assertEqual(resp.status_code, 302)
+
+        new_period = FatMonthPeriod.objects.get(year=2026, month=1)
+        self.assertEqual(new_period.total_fats, 20)
 
     def test_period_delete(self):
         self.client.login(username="director", password="password")

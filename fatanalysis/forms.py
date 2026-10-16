@@ -1,5 +1,4 @@
 import calendar
-from datetime import datetime
 
 from django import forms
 from django.utils import timezone
@@ -37,51 +36,51 @@ class FatSyncConfigForm(forms.ModelForm):
         }
 
 
-class FatDirectCsvForm(forms.Form):
+class FatSyncSingleMonthForm(forms.Form):
     """
-    Form for directly uploading or pasting an AFAT CSV into a designated month/year.
+    Form for fetching a specific month's AFAT statistics directly from INIT Auth.
     """
 
     current_year = timezone.now().year
-    YEAR_CHOICES = [(y, str(y)) for y in range(current_year - 5, current_year + 2)]
+    YEAR_CHOICES = [(y, str(y)) for y in range(current_year - 5, current_year + 1)]
     MONTH_CHOICES = [(i, calendar.month_name[i]) for i in range(1, 13)]
 
-    year = forms.ChoiceField(
-        choices=YEAR_CHOICES,
+    year = forms.IntegerField(
         initial=current_year,
         label=_("Year"),
-        widget=forms.Select(attrs={"class": "form-select"}),
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 2018, "max": current_year + 1}),
     )
     month = forms.ChoiceField(
         choices=MONTH_CHOICES,
-        initial=datetime.now().month,
+        initial=timezone.now().month,
         label=_("Month"),
         widget=forms.Select(attrs={"class": "form-select"}),
     )
-    corporation_name = forms.CharField(
-        max_length=255,
-        initial="Game of Drones",
-        label=_("Corporation Name"),
-        widget=forms.TextInput(attrs={"class": "form-control"}),
-    )
-    csv_file = forms.FileField(
-        required=False,
-        label=_("Upload CSV File"),
-        widget=forms.ClearableFileInput(attrs={"class": "form-control", "accept": ".csv,text/csv"}),
-    )
-    csv_text = forms.CharField(
-        required=False,
-        label=_("Or Paste CSV Text"),
-        widget=forms.Textarea(
-            attrs={"class": "form-control", "rows": 4, "placeholder": "Main Character,Total FATs..."}
-        ),
-    )
 
-    def clean(self):
-        cleaned_data = super().clean()
-        csv_file = cleaned_data.get("csv_file")
-        csv_text = cleaned_data.get("csv_text")
 
-        if not csv_file and not (csv_text and csv_text.strip()):
-            raise forms.ValidationError(_("Please either upload a CSV file or paste CSV text."))
-        return cleaned_data
+class FatSyncBulkForm(forms.Form):
+    """
+    Form for initiating a bulk crawler sync across all historical periods.
+    """
+
+    current_year = timezone.now().year
+    current_month = timezone.now().month
+    MONTH_CHOICES = [(i, calendar.month_name[i]) for i in range(1, 13)]
+
+    start_year = forms.IntegerField(
+        initial=2024,
+        label=_("Start Year"),
+        help_text=_("The earliest year to begin crawling from (e.g. 2024)."),
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 2018, "max": current_year}),
+    )
+    end_year = forms.IntegerField(
+        initial=current_year,
+        label=_("End Year"),
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 2018, "max": current_year + 1}),
+    )
+    end_month = forms.ChoiceField(
+        choices=MONTH_CHOICES,
+        initial=current_month,
+        label=_("End Month"),
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )

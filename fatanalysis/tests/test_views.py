@@ -70,6 +70,44 @@ class TestViews(TestCase):
         resp_leg = self.client.get(reverse("fatanalysis:overview_legacy", args=[30]))
         self.assertEqual(resp_leg.status_code, 302)
 
+    def test_available_years_deduplication(self):
+        """Verify available_years has no duplicates even when multiple months exist for the same year."""
+        self.client.login(username="member", password="password")
+
+        # Create additional months for existing year 2026 and multiple months for 2024
+        FatMonthPeriod.objects.create(
+            corporation_id=98089258,
+            corporation_name="Game of Drones",
+            year=2026,
+            month=9,
+            total_fats=100,
+        )
+        FatMonthPeriod.objects.create(
+            corporation_id=98089258,
+            corporation_name="Game of Drones",
+            year=2024,
+            month=1,
+            total_fats=50,
+        )
+        FatMonthPeriod.objects.create(
+            corporation_id=98089258,
+            corporation_name="Game of Drones",
+            year=2024,
+            month=2,
+            total_fats=60,
+        )
+
+        resp = self.client.get(reverse("fatanalysis:index"))
+        self.assertEqual(resp.status_code, 200)
+
+        # Context available_years must contain each year exactly once
+        self.assertEqual(resp.context["available_years"], [2026, 2024])
+
+        # HTML content must contain exactly one navigation button per year
+        content = resp.content.decode()
+        self.assertEqual(content.count('href="?window=year_2026"'), 1)
+        self.assertEqual(content.count('href="?window=year_2024"'), 1)
+
     def test_member_index_empty_state(self):
         self.client.login(username="member", password="password")
         FatMonthPeriod.objects.all().delete()

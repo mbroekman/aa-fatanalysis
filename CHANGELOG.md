@@ -17,6 +17,7 @@
 
 ### Fix
 
+- Fix duplicate year buttons appearing in dashboard filter navigation caused by implicit model Meta ordering (FATANALYSIS-20)
 - Improve contrast and legibility of inactive time window period filters and secondary navigation buttons in dark mode (FATANALYSIS-17)
 - Fix DataTables TN/18 warning by replacing server-rendered empty row with native emptyTable message
 

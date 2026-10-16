@@ -32,12 +32,16 @@ def index(request: HttpRequest) -> HttpResponse:
     window = request.GET.get("window", "90d")
     config = FatSyncConfig.get_solo()
 
-    # Determine available years for filter pills
+    # Determine available years for filter pills.
+    # Clearing order_by avoids implicit Meta ordering columns in SELECT DISTINCT.
     available_years = sorted(
         list(
-            FatMonthPeriod.objects.filter(corporation_id=config.corporation_id)
-            .values_list("year", flat=True)
-            .distinct()
+            set(
+                FatMonthPeriod.objects.filter(corporation_id=config.corporation_id)
+                .order_by()
+                .values_list("year", flat=True)
+                .distinct()
+            )
         ),
         reverse=True,
     )

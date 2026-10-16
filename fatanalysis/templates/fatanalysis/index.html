@@ -221,12 +221,6 @@
                                 </td>
                             {% endfor %}
                         </tr>
-                    {% empty %}
-                        <tr>
-                            <td colspan="{{ table_columns_count }}" class="text-center py-4 text-muted">
-                                {% trans "No pilot FAT entries recorded for this time window." %}
-                            </td>
-                        </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -246,6 +240,8 @@
                 pageLength: 25,
                 responsive: false,
                 language: {
+                    emptyTable: "{% trans 'No pilot FAT entries recorded for this time window.' %}",
+                    zeroRecords: "{% trans 'No matching pilots found.' %}",
                     search: "_INPUT_",
                     searchPlaceholder: "{% trans 'Search pilots...' %}"
                 }

@@ -70,12 +70,6 @@
                                 {% endif %}
                             </td>
                         </tr>
-                    {% empty %}
-                        <tr>
-                            <td colspan="8" class="text-center py-4 text-muted">
-                                {% trans "No monthly FAT periods recorded yet." %}
-                            </td>
-                        </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -91,7 +85,13 @@
             $('#periods-table').DataTable({
                 order: [[ 0, "desc" ]],
                 pageLength: 25,
-                responsive: false
+                responsive: false,
+                language: {
+                    emptyTable: "{% trans 'No monthly FAT periods recorded yet.' %}",
+                    zeroRecords: "{% trans 'No matching periods found.' %}",
+                    search: "_INPUT_",
+                    searchPlaceholder: "{% trans 'Search periods...' %}"
+                }
             });
         });
     </script>

@@ -112,12 +112,6 @@
                                 </td>
                             {% endfor %}
                         </tr>
-                    {% empty %}
-                        <tr>
-                            <td colspan="{{ dynamic_headers|length|add:3 }}" class="text-center py-4 text-muted">
-                                {% trans "No entries recorded for this period." %}
-                            </td>
-                        </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -134,7 +128,13 @@
             $('#entries-table').DataTable({
                 order: [[2, 'desc']],
                 pageLength: 25,
-                responsive: false
+                responsive: false,
+                language: {
+                    emptyTable: "{% trans 'No entries recorded for this period.' %}",
+                    zeroRecords: "{% trans 'No matching entries found.' %}",
+                    search: "_INPUT_",
+                    searchPlaceholder: "{% trans 'Search entries...' %}"
+                }
             });
 
             {% if top_labels %}

@@ -126,12 +126,6 @@
                                 </td>
                             {% endfor %}
                         </tr>
-                    {% empty %}
-                        <tr>
-                            <td colspan="{{ dynamic_headers|length|add:2 }}" class="text-center py-4 text-muted">
-                                {% trans "No entries found." %}
-                            </td>
-                        </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -148,7 +142,13 @@
             $('#player-table').DataTable({
                 order: [[0, 'desc']],
                 pageLength: 25,
-                responsive: false
+                responsive: false,
+                language: {
+                    emptyTable: "{% trans 'No entries found.' %}",
+                    zeroRecords: "{% trans 'No matching entries found.' %}",
+                    search: "_INPUT_",
+                    searchPlaceholder: "{% trans 'Search...' %}"
+                }
             });
 
             {% if trend_totals %}

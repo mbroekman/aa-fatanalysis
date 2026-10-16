@@ -74,7 +74,6 @@ class TestViews(TestCase):
         FatMonthPeriod.objects.all().delete()
         resp = self.client.get(reverse("fatanalysis:index"))
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, 'colspan="5"')
         self.assertContains(resp, "No pilot FAT entries recorded for this time window.")
 
     def test_member_player_detail(self):
